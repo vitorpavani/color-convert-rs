@@ -48,3 +48,15 @@ fn hsv_to_rgb_matches_js_vectors() {
         VecValue::Nums(vec![r.round(), g.round(), b.round()])
     });
 }
+
+// ── hsv → hsl ───────────────────────────────────────────────────────────────
+
+#[test]
+fn hsv_to_hsl_matches_js_vectors() {
+    let vectors = load_route("hsv", "hsl");
+    assert_cases("hsv_to_hsl", &vectors.cases, 0.0, |input| {
+        let [h, s, l] = hsv::hsl(hsv_input(input));
+        // Mirror the JS public wrapper's per-channel Math.round (see module doc).
+        VecValue::Nums(vec![h.round(), s.round(), l.round()])
+    });
+}
