@@ -109,7 +109,8 @@ fn convert_rounded_rgb_to_hsl_matches_native_vectors() {
 
     assert_cases("convert_rounded(rgb→hsl)", &vectors.cases, 0.0, |input| {
         let src = color_from_vecvalue(from, input);
-        let result = convert_rounded(from, to, src).expect("convert_rounded rgb→hsl should succeed");
+        let result =
+            convert_rounded(from, to, src).expect("convert_rounded rgb→hsl should succeed");
         vecvalue_from_color(&result)
     });
 }
@@ -117,7 +118,7 @@ fn convert_rounded_rgb_to_hsl_matches_native_vectors() {
 #[test]
 fn convert_raw_rgb_to_hsl_returns_unrounded_values() {
     // Pure red: raw hsl should be [0.0, 100.0, 50.0] (unrounded, coincidentally integer).
-    let result =
-        convert(Model::Rgb, Model::Hsl, Color::Rgb([255.0, 0.0, 0.0])).expect("convert should succeed");
+    let result = convert(Model::Rgb, Model::Hsl, Color::Rgb([255.0, 0.0, 0.0]))
+        .expect("convert should succeed");
     assert_eq!(result, Color::Hsl([0.0, 100.0, 50.0]));
 }

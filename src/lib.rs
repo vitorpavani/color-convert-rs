@@ -24,5 +24,5 @@ pub mod oklch;
 pub mod rgb;
 pub mod xyz;
 
-pub use convert::{Color, Model};
+pub use convert::{Color, Model, convert, convert_rounded};
 pub use error::Error;
