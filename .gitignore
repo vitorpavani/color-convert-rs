@@ -15,4 +15,7 @@ benchmarks/js/node_modules/
 # Benchmark scratch (raw outputs kept out; the committed ledger lives in benchmarks/results.jsonl)
 benchmarks/tmp/
 
-.omolibnull.rlib
+.omo
+
+# CubeCL/wgpu build-time linker probe artifact
+libnull.rlib
