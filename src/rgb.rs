@@ -590,13 +590,53 @@ pub(crate) fn hex_f64(rgb: [f64; 3]) -> String {
     ])
 }
 
-/// Same as [`keyword`] but accepts raw float RGB channels (0–255).
-/// Used by the `convert` module's route adapters.
-#[allow(dead_code, reason = "used by convert module (Behavior 3, issue #17)")]
+/// Graph-adapter variant of [`keyword`]: mirrors JS `rgb.keyword` which
+/// receives raw f64 intermediate values in the multi-hop chain.  The JS
+/// does NOT round to u8 before lookup — it uses nearest-neighbour on raw
+/// floats.  Exact-match is attempted only when the f64 values happen to be
+/// whole numbers (unlikely in multi-hop paths).
 pub(crate) fn keyword_f64(rgb: [f64; 3]) -> String {
-    keyword([
-        channel_to_u8(rgb[0]),
-        channel_to_u8(rgb[1]),
-        channel_to_u8(rgb[2]),
-    ])
+    // Try exact match on u8-rounded values first (handles the case where
+    // intermediate floats happen to be exact integers).
+    let r_u8 = channel_to_u8(rgb[0]);
+    let g_u8 = channel_to_u8(rgb[1]);
+    let b_u8 = channel_to_u8(rgb[2]);
+
+    // Exact match: last matching entry wins (JS reverseKeywords semantics).
+    // Only triggers when rgb values are within 0.5 of integer u8 values.
+    let mut exact: Option<&str> = None;
+    for (name, entry_rgb) in &crate::color_name::CSS_COLORS {
+        if *entry_rgb == [r_u8, g_u8, b_u8] {
+            exact = Some(name);
+        }
+    }
+    // Only return exact match if rgb values ARE actually integers (within
+    // round-trip tolerance). This avoids false exact matches when the
+    // float value is e.g. 127.5 — it rounds to 128, but the JS would
+    // NOT find an exact match for [127.5, 127.5, 127.5].
+    if let Some(name) = exact
+        && (rgb[0] - f64::from(r_u8)).abs() < 0.001
+        && (rgb[1] - f64::from(g_u8)).abs() < 0.001
+        && (rgb[2] - f64::from(b_u8)).abs() < 0.001
+    {
+        return name.to_string();
+    }
+
+    // Nearest-neighbour fallback on RAW f64 values (matching JS
+    // comparativeDistance). First entry at strictly minimum distance wins.
+    let mut best_name: &str = "";
+    let mut best_dist: f64 = f64::INFINITY;
+
+    for (name, entry_rgb) in &crate::color_name::CSS_COLORS {
+        let dr = rgb[0] - f64::from(entry_rgb[0]);
+        let dg = rgb[1] - f64::from(entry_rgb[1]);
+        let db = rgb[2] - f64::from(entry_rgb[2]);
+        let dist = dr * dr + dg * dg + db * db;
+        if dist < best_dist {
+            best_dist = dist;
+            best_name = name;
+        }
+    }
+
+    best_name.to_string()
 }
