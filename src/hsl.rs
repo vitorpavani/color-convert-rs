@@ -1,0 +1,124 @@
+//! Conversions FROM the `hsl` colour model into other colour spaces
+//! — ported from `convert.hsl.*` in color-convert@3.1.3 `conversions.js`.
+//!
+//! ## Output
+//!
+//! All numeric routes return **raw (unrounded) floats**. The per-channel
+//! rounding (`Math.round`) applied by the JS public wrapper is the caller's
+//! (or test's) responsibility. Tolerance is 0.0 after per-channel rounding;
+//! see the vector tests in `tests/hsl_routes.rs`.
+
+/// Computes a single RGB channel value (raw, unrounded) given the
+/// hue-offset parameters, mirroring one iteration of the JS loop body
+/// in `convert.hsl.rgb`.
+///
+/// The `offset` is `+1/3`, `0`, or `-1/3` for the R, G, and B channels
+/// respectively, corresponding to `h + 1/3 * -(i - 1)` for `i ∈ {0,1,2}`.
+#[inline]
+fn channel(h: f64, t1: f64, t2: f64, offset: f64) -> f64 {
+    let mut t3 = h + offset;
+
+    if t3 < 0.0 {
+        t3 += 1.0;
+    }
+    if t3 > 1.0 {
+        t3 -= 1.0;
+    }
+
+    let val = if 6.0 * t3 < 1.0 {
+        t1 + (t2 - t1) * 6.0 * t3
+    } else if 2.0 * t3 < 1.0 {
+        t2
+    } else if 3.0 * t3 < 2.0 {
+        t1 + (t2 - t1) * (2.0 / 3.0 - t3) * 6.0
+    } else {
+        t1
+    };
+
+    val * 255.0
+}
+
+/// Converts an HSL triple to raw RGB floats `[r (0-255), g (0-255), b (0-255)]`.
+///
+/// Faithful port of `convert.hsl.rgb` (color-convert@3.1.3 conversions.js,
+/// lines 304–345). The achromatic case uses a direct `== 0.0` comparison;
+/// the saturation is `⟨integer⟩ / 100.0`, so exact equality is well-defined
+/// and matches the JS `s === 0` control flow.
+pub fn rgb(hsl: [f64; 3]) -> [f64; 3] {
+    let h = hsl[0] / 360.0;
+    let s = hsl[1] / 100.0;
+    let l = hsl[2] / 100.0;
+
+    // Achromatic case — saturation is exactly zero
+    if s == 0.0 {
+        let val = l * 255.0;
+        return [val, val, val];
+    }
+
+    let t2 = if l < 0.5 {
+        l * (1.0 + s)
+    } else {
+        l + s - l * s
+    };
+    let t1 = 2.0 * l - t2;
+
+    // Hue offsets for R, G, B channels (JS loop i=0,1,2 → +1/3, 0, -1/3)
+    let r = channel(h, t1, t2, 1.0 / 3.0);
+    let g = channel(h, t1, t2, 0.0);
+    let b = channel(h, t1, t2, -1.0 / 3.0);
+
+    [r, g, b]
+}
+
+/// Converts an HSL triple to raw HSV floats `[h (0-360), s (0-100), v (0-100)]`.
+///
+/// Faithful port of `convert.hsl.hsv` (color-convert@3.1.3 conversions.js,
+/// lines 347–361). The `l == 0.0` branch in the `sv` computation uses an
+/// exact float comparison against `hsl[2] * 2.0 / 100.0` — when the input
+/// lightness is zero, the doubled value is also exactly zero, matching the
+/// JS `l === 0` control flow.
+pub fn hsv(hsl: [f64; 3]) -> [f64; 3] {
+    let h = hsl[0];
+    let mut s = hsl[1] / 100.0;
+    let mut l = hsl[2] / 100.0;
+    let mut smin = s;
+    let lmin = l.max(0.01);
+
+    l *= 2.0;
+    s *= if l <= 1.0 { l } else { 2.0 - l };
+    smin *= if lmin <= 1.0 { lmin } else { 2.0 - lmin };
+
+    let v = (l + s) / 2.0;
+    let sv = if l == 0.0 {
+        (2.0 * smin) / (lmin + smin)
+    } else {
+        (2.0 * s) / (l + s)
+    };
+
+    [h, sv * 100.0, v * 100.0]
+}
+
+/// Converts an HSL triple to raw HCG floats `[h (0-360), c (0-100), g (0-100)]`.
+///
+/// Faithful port of `convert.hsl.hcg` (color-convert@3.1.3 conversions.js,
+/// lines 806–818). Chroma is derived from saturation and lightness; the gray
+/// component measures how close the colour is to a neutral gray at that
+/// lightness.
+pub fn hcg(hsl: [f64; 3]) -> [f64; 3] {
+    let s = hsl[1] / 100.0;
+    let l = hsl[2] / 100.0;
+
+    let c = if l < 0.5 {
+        2.0 * s * l
+    } else {
+        2.0 * s * (1.0 - l)
+    };
+
+    let f = if c < 1.0 {
+        (l - 0.5 * c) / (1.0 - c)
+    } else {
+        0.0
+    };
+
+    [hsl[0], c * 100.0, f * 100.0]
+}
