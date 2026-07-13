@@ -3,10 +3,12 @@
 //!
 //! ## Output
 //!
-//! All numeric routes return **raw (unrounded) floats**. The per-channel
-//! rounding (`Math.round`) applied by the JS public wrapper is the caller's
-//! (or test's) responsibility. Tolerance is 0.0 after per-channel rounding;
-//! see the vector tests in `tests/hsv_routes.rs`.
+//! The colour-space routes (`rgb`, `hsl`, `hcg`) return **raw (unrounded)
+//! floats**; the per-channel rounding (`Math.round`) applied by the JS public
+//! wrapper is the caller's (or test's) responsibility, and comparison is exact
+//! at tolerance 0.0 after that rounding. The `ansi16` route returns an exact
+//! `u16` terminal-code (no rounding tolerance). See the vector tests in
+//! `tests/hsv_routes.rs`.
 
 /// Converts an HSV triple to raw RGB floats `[r (0-255), g (0-255), b (0-255)]`.
 ///
