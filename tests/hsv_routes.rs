@@ -72,3 +72,14 @@ fn hsv_to_hcg_matches_js_vectors() {
         VecValue::Nums(vec![h.round(), c.round(), g.round()])
     });
 }
+
+// ── hsv → ansi16 ────────────────────────────────────────────────────────────
+
+#[test]
+fn hsv_to_ansi16_matches_js_vectors() {
+    let vectors = load_route("hsv", "ansi16");
+    assert_cases("hsv_to_ansi16", &vectors.cases, 0.0, |input| {
+        let n = hsv::ansi16(hsv_input(input));
+        VecValue::Num(f64::from(n))
+    });
+}
