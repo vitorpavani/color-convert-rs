@@ -78,3 +78,17 @@ pub fn hcg(hsv: [f64; 3]) -> [f64; 3] {
     let f = if c < 1.0 { (v - c) / (1.0 - c) } else { 0.0 };
     [hsv[0], c * 100.0, f * 100.0]
 }
+
+/// Converts an HSV triple to an ANSI-16 terminal colour code (30–37, 40–47,
+/// 90–97, 100–107).
+///
+/// Faithful port of `convert.hsv.ansi16` (color-convert@3.1.3 conversions.js,
+/// lines 667–671). The JS chains through `convert.rgb.ansi16` with the
+/// original HSV value channel — not the value recomputed from the rgb
+/// round-trip — so the brightness bucket matches `round(hsvV / 50)`.
+///
+/// The returned `u16` is an exact integer code; no rounding tolerance applies.
+pub fn ansi16(hsv: [f64; 3]) -> u16 {
+    let rgb_f = rgb(hsv);
+    crate::rgb::ansi16_with_value(rgb_f, hsv[2])
+}
