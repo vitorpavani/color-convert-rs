@@ -1,10 +1,13 @@
-//! Conversions FROM the `rgb` color model.
+//! Conversions FROM the `rgb` color model — all 10 direct routes
+//! (`hsl`, `hsv`, `hwb`, `cmyk`, `xyz`, `lab`, `oklab`, `hcg`,
+//! `gray`, `apple`) ported from `convert.rgb.*` in color-convert@3.1.3
+//! `conversions.js`.
 //!
-//! Mirrors `convert.rgb.*` in color-convert@3.1.3 `conversions.js`. Each
-//! function returns RAW (unrounded) floats — the observable per-channel
-//! rounding applied by the JS public wrapper (`Math.round`) is the caller's
-//! (or test's) responsibility. Tolerance is documented per route in the
-//! vector tests (currently 0.0 after rounding for rgb→hsl).
+//! Each function returns RAW (unrounded) floats — the observable
+//! per-channel rounding applied by the JS public wrapper (`Math.round`) is
+//! the caller's (or test's) responsibility.  Tolerance is 0.0 after
+//! per-channel rounding for every route; see the vector tests in
+//! `tests/rgb_routes.rs` for per-route documentation.
 
 /// Normalize an RGB `[u8; 3]` input to per-channel `f64` fractions in `[0.0, 1.0]`,
 /// returning the three channel values along with their min, max, and delta (max-min).
