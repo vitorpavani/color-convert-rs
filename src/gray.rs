@@ -36,3 +36,11 @@ pub fn hsv(gray: [f64; 1]) -> [f64; 3] {
 pub fn hwb(gray: [f64; 1]) -> [f64; 3] {
     [0.0, 100.0, gray[0]]
 }
+
+/// Converts grayscale to CMYK.
+///
+/// Mirror of `convert.gray.cmyk` (lines 959–961):
+/// `return [0, 0, 0, gray[0]]`
+pub fn cmyk(gray: [f64; 1]) -> [f64; 4] {
+    [0.0, 0.0, 0.0, gray[0]]
+}
