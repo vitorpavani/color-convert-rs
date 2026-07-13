@@ -56,8 +56,15 @@ pub fn rgb(hcg: [f64; 3]) -> [f64; 3] {
 ///
 /// Faithful port of `convert.hcg.hsv` (color-convert@3.1.3 conversions.js,
 /// lines 886–898).
-pub fn hsv(_hcg: [f64; 3]) -> [f64; 3] {
-    todo!()
+pub fn hsv(hcg: [f64; 3]) -> [f64; 3] {
+    let c = hcg[1] / 100.0;
+    let g = hcg[2] / 100.0;
+    let v = c + g * (1.0 - c);
+    let mut f = 0.0;
+    if v > 0.0 {
+        f = c / v;
+    }
+    [hcg[0], f * 100.0, v * 100.0]
 }
 
 /// Converts an HCG triple to raw HSL floats `[h (0-360), s (0-100), l (0-100)]`.
