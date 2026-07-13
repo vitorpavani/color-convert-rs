@@ -6,6 +6,7 @@
 mod color_name;
 mod error;
 pub mod hsl;
+pub mod hsv;
 pub mod rgb;
 
 pub use error::Error;
