@@ -4,5 +4,6 @@
 //! loop — none exist until a test demands them.
 
 mod error;
+pub mod rgb;
 
 pub use error::Error;

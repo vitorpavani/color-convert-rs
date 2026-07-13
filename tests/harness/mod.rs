@@ -54,6 +54,26 @@ pub fn load_vectors(route: &str) -> Vectors {
         .unwrap_or_else(|err| panic!("failed to parse vector file {}: {err}", path.display()))
 }
 
+/// Loads `tests/vectors/<from>_to_<to>.json` with a built-in metadata guard:
+/// the file's `from`/`to` must match the requested pair and its `source` must
+/// name the reference library. This is the one-liner every route test should
+/// use — the guard lives here once instead of being repeated across the ~50
+/// route suites (and it reads the metadata fields in every test target, so no
+/// target needs a `dead_code` allow).
+pub fn load_route(from: &str, to: &str) -> Vectors {
+    let vectors = load_vectors(&format!("{from}_to_{to}"));
+    assert_eq!(
+        (vectors.from.as_str(), vectors.to.as_str()),
+        (from, to),
+        "vector file {from}_to_{to}.json declares mismatched route metadata"
+    );
+    assert!(
+        !vectors.source.is_empty(),
+        "vector file {from}_to_{to}.json must name its reference source"
+    );
+    vectors
+}
+
 /// Sorted, comma-separated route names found in the vectors directory, so a
 /// mistyped route name in one of the ~50 route suites fails with the fix in
 /// the message.

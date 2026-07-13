@@ -16,13 +16,14 @@
 
 mod harness;
 
-use harness::{Case, VecValue, assert_cases, load_vectors};
+use harness::{Case, VecValue, assert_cases, load_route, load_vectors};
 use rstest::rstest;
 
 #[rstest]
 fn harness_loads_vectors_and_checks_cases_parametrically() {
-    // 1. Loader: typed parse of a numeric-route vector file.
-    let vectors = load_vectors("rgb_to_hsl");
+    // 1. Loader: typed parse of a numeric-route vector file, via the
+    //    metadata-guarded route entry point.
+    let vectors = load_route("rgb", "hsl");
     assert_eq!(vectors.from, "rgb");
     assert_eq!(vectors.to, "hsl");
     assert_eq!(vectors.source, "color-convert@3.1.3");
