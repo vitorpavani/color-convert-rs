@@ -71,8 +71,17 @@ pub fn hsv(hcg: [f64; 3]) -> [f64; 3] {
 ///
 /// Faithful port of `convert.hcg.hsl` (color-convert@3.1.3 conversions.js,
 /// lines 900–914).
-pub fn hsl(_hcg: [f64; 3]) -> [f64; 3] {
-    todo!()
+pub fn hsl(hcg: [f64; 3]) -> [f64; 3] {
+    let c = hcg[1] / 100.0;
+    let g = hcg[2] / 100.0;
+    let l = g * (1.0 - c) + 0.5 * c;
+    let mut s = 0.0;
+    if l > 0.0 && l < 0.5 {
+        s = c / (2.0 * l);
+    } else if (0.5..1.0).contains(&l) {
+        s = c / (2.0 * (1.0 - l));
+    }
+    [hcg[0], s * 100.0, l * 100.0]
 }
 
 /// Converts an HCG triple to raw HWB floats `[h (0-360), w (0-100), b (0-100)]`.
