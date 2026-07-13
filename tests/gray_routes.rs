@@ -70,3 +70,14 @@ fn gray_to_hwb_matches_js_vectors() {
         VecValue::Nums(vec![h.round(), w.round(), b.round()])
     });
 }
+
+// ── gray → cmyk ──────────────────────────────────────────────────────────────
+
+#[test]
+fn gray_to_cmyk_matches_js_vectors() {
+    let vectors = load_route("gray", "cmyk");
+    assert_cases("gray_to_cmyk", &vectors.cases, 0.0, |input| {
+        let [c, m, y, k] = gray::cmyk(gray_input(input));
+        VecValue::Nums(vec![c.round(), m.round(), y.round(), k.round()])
+    });
+}
