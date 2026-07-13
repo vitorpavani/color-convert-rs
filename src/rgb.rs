@@ -192,6 +192,37 @@ fn lab_transfer(t: f64) -> f64 {
     }
 }
 
+/// Converts an RGB triple to raw Oklab floats `[l (0-100), a, b]`.
+///
+/// Faithful port of `convert.rgb.oklab` (color-convert@3.1.3 conversions.js,
+/// lines 200–215). The algorithm:
+///
+/// 1. Apply [`srgb_nonlinear_transform_inv`] to each channel / 255 → linear sRGB
+/// 2. Linear sRGB → LMS cone response, then ∛ each channel
+/// 3. LMS' → L'a'b' via the Oklab matrix
+/// 4. Scale: `[l * 100, a * 100, b * 100]`
+///
+/// The `a` and `b` channels may be negative (e.g. `[0, 0, 128]` →
+/// `[27, -2, -19]`). The caller (or test) is responsible for per-channel
+/// rounding to reproduce the JS public wrapper's `Math.round` behaviour.
+pub fn oklab(rgb: [u8; 3]) -> [f64; 3] {
+    let r = srgb_nonlinear_transform_inv(f64::from(rgb[0]) / 255.0);
+    let g = srgb_nonlinear_transform_inv(f64::from(rgb[1]) / 255.0);
+    let b = srgb_nonlinear_transform_inv(f64::from(rgb[2]) / 255.0);
+
+    // LMS cone response — linear sRGB → LMS, then cube root
+    let lp = (0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b).cbrt();
+    let mp = (0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b).cbrt();
+    let sp = (0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b).cbrt();
+
+    // Oklab matrix — LMS' → L'a'b'
+    let l = 0.2104542553 * lp + 0.7936177850 * mp - 0.0040720468 * sp;
+    let aa = 1.9779984951 * lp - 2.4285922050 * mp + 0.4505937099 * sp;
+    let bb = 0.0259040371 * lp + 0.7827717662 * mp - 0.8086757660 * sp;
+
+    [l * 100.0, aa * 100.0, bb * 100.0]
+}
+
 /// Converts an RGB triple to raw CIELAB floats `[l (0-100), a, b]`.
 ///
 /// Faithful port of `convert.rgb.lab` (color-convert@3.1.3 conversions.js,
