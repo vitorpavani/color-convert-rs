@@ -37,3 +37,14 @@ fn gray_to_rgb_matches_js_vectors() {
         VecValue::Nums(vec![r.round(), g.round(), b.round()])
     });
 }
+
+// ── gray → hsl ───────────────────────────────────────────────────────────────
+
+#[test]
+fn gray_to_hsl_matches_js_vectors() {
+    let vectors = load_route("gray", "hsl");
+    assert_cases("gray_to_hsl", &vectors.cases, 0.0, |input| {
+        let [h, s, l] = gray::hsl(gray_input(input));
+        VecValue::Nums(vec![h.round(), s.round(), l.round()])
+    });
+}
