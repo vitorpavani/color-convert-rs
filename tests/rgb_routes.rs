@@ -46,6 +46,14 @@ fn rgb_input(value: &VecValue) -> [u8; 3] {
 #[test]
 fn rgb_to_hsl_matches_js_vectors() {
     let vectors = load_vectors("rgb_to_hsl");
+    // Guard the vector file metadata (also keeps the shared harness fields
+    // read in this target, satisfying per-target dead_code analysis).
+    assert_eq!(
+        (vectors.from.as_str(), vectors.to.as_str()),
+        ("rgb", "hsl"),
+        "unexpected vector route metadata (source: {})",
+        vectors.source
+    );
     assert_cases("rgb_to_hsl", &vectors.cases, 0.0, |input| {
         let [h, s, l] = rgb::hsl(rgb_input(input));
         // Mirror the JS public wrapper's per-channel Math.round (see module doc).
