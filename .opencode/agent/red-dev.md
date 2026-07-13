@@ -1,6 +1,7 @@
 ---
 description: RED phase of TDD — writes exactly one failing Rust test for the next behavior, from JS-generated vectors. Read-only on src/, writes only under tests/
 mode: subagent
+model: deepseek/deepseek-v4-pro
 temperature: 0.2
 permission:
   edit: allow

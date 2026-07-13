@@ -1,6 +1,7 @@
 ---
 description: Post-MVP self-improvement — proposes architectural/algorithmic/SIMD/GPU-kernel improvements, drives them through RED/GREEN/BLUE, re-measures, and keeps a change only if it beats both the JS baseline and the previous Rust iteration
 mode: subagent
+model: deepseek/deepseek-v4-pro
 temperature: 0.4
 permission:
   edit: allow

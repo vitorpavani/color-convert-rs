@@ -1,6 +1,7 @@
 ---
 description: BLUE phase of TDD — refactors for clarity/consistency/perf, reviews against conventions, hands findings back to green-dev. Keeps all tests green
 mode: subagent
+model: deepseek/deepseek-v4-pro
 temperature: 0.1
 permission:
   edit: allow

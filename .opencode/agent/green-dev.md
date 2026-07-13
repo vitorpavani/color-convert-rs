@@ -1,6 +1,7 @@
 ---
 description: GREEN phase of TDD — writes the minimum Rust code to make the failing test pass, no speculative generality. Edits src/, keeps clippy clean
 mode: subagent
+model: deepseek/deepseek-v4-pro
 temperature: 0.2
 permission:
   edit: allow
