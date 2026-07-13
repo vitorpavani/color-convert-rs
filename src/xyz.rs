@@ -45,3 +45,35 @@ fn srgb_nonlinear_transform(c: f64) -> f64 {
     };
     cc.clamp(0.0, 1.0)
 }
+
+/// The LAB forward transfer function `f(t)` from CIE 1976 L*a*b*:
+/// `t > Δ³ ? ∛t : κ t + 16/116` where `Δ = 6/29` and `κ = 7.787`.
+///
+/// Mirrors the inline triplicate in `convert.xyz.lab` (conversions.js
+/// lines 517–519). Kept private — only the public conversion functions
+/// consume it.
+fn lab_transfer(t: f64) -> f64 {
+    let delta_cubed = (6.0_f64 / 29.0).powi(3);
+    if t > delta_cubed {
+        t.cbrt()
+    } else {
+        7.787 * t + 16.0 / 116.0
+    }
+}
+
+/// Converts an XYZ triple to raw CIE L*a*b* floats `[l (0-100), a, b]`.
+///
+/// Faithful port of `convert.xyz.lab` (color-convert@3.1.3 conversions.js,
+/// lines 508–526). Uses D65 reference white-point constants `(95.047, 100,
+/// 108.883)` and the CIE forward transfer function.
+pub fn lab(xyz: [f64; 3]) -> [f64; 3] {
+    let x = lab_transfer(xyz[0] / 95.047);
+    let y = lab_transfer(xyz[1] / 100.0);
+    let z = lab_transfer(xyz[2] / 108.883);
+
+    let l = 116.0 * y - 16.0;
+    let a = 500.0 * (x - y);
+    let b = 200.0 * (y - z);
+
+    [l, a, b]
+}

@@ -33,7 +33,6 @@ fn xyz_input(value: &VecValue) -> [f64; 3] {
 /// JS `Math.round` semantics: half toward +∞.
 /// For non-negative inputs this is equivalent to Rust's `f64::round`,
 /// but for negative inputs (lab/oklab a,b channels) the two diverge.
-#[expect(dead_code, reason = "used by lab and oklab tests added later in this issue")]
 fn js_round(x: f64) -> f64 {
     (x + 0.5).floor()
 }
