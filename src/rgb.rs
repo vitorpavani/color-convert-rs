@@ -1,13 +1,24 @@
-//! Conversions FROM the `rgb` color model — all 10 direct routes
-//! (`hsl`, `hsv`, `hwb`, `cmyk`, `xyz`, `lab`, `oklab`, `hcg`,
-//! `gray`, `apple`) ported from `convert.rgb.*` in color-convert@3.1.3
-//! `conversions.js`.
+//! Conversions FROM the `rgb` colour model into other colour spaces,
+//! string encodings, and terminal codes — ported from `convert.rgb.*`
+//! in color-convert@3.1.3 `conversions.js`.
 //!
-//! Each function returns RAW (unrounded) floats — the observable
-//! per-channel rounding applied by the JS public wrapper (`Math.round`) is
-//! the caller's (or test's) responsibility.  Tolerance is 0.0 after
-//! per-channel rounding for every route; see the vector tests in
-//! `tests/rgb_routes.rs` for per-route documentation.
+//! ## Decoder routes (rgb → colour space)
+//!
+//! `hsl`, `hsv`, `hwb`, `cmyk`, `xyz`, `lab`, `oklab`, `hcg`, `gray`,
+//! `apple` — ten direct numeric routes.  Each returns **raw (unrounded)
+//! floats**.  The per-channel rounding (`Math.round`) applied by the JS
+//! public wrapper is the caller's (or test's) responsibility.  Tolerance
+//! is 0.0 after per-channel rounding for every numeric route; see the
+//! vector tests in `tests/rgb_routes.rs`.
+//!
+//! ## Encoder routes (rgb → label)
+//!
+//! `hex` (→ `String`, uppercase 6-digit hex), `keyword` (→ `String`,
+//! nearest CSS colour name), `ansi16` (→ `u16`, 30–37 / 40–47 / 90–97 /
+//! 100–107), `ansi256` (→ `u16`, 16–231 cube / 232–255 greyscale) —
+//! four routes delivering non‑numeric outputs.  String and integer
+//! comparisons are exact; no rounding tolerance applies.  Vector tests
+//! live in `tests/rgb_encoder_routes.rs`.
 
 /// Normalize an RGB `[u8; 3]` input to per-channel `f64` fractions in `[0.0, 1.0]`,
 /// returning the three channel values along with their min, max, and delta (max-min).
@@ -304,6 +315,86 @@ pub fn gray(rgb: [u8; 3]) -> [f64; 1] {
     [value / 255.0 * 100.0]
 }
 
+/// Converts an RGB triple to an ANSI-16 terminal color code (30–37, 40–47,
+/// 90–97, 100–107).
+///
+/// Faithful port of `convert.rgb.ansi16` (color-convert@3.1.3 conversions.js,
+/// lines 643–666). The algorithm:
+///
+/// 1. Convert RGB → HSV via [`hsv`]; extract the V (value) channel.
+/// 2. Bucket the value into 0, 1, or 2 via `round(v / 50)`.
+/// 3. If value == 0 → return 30 (foreground black).
+/// 4. Pack the raw R/G/B channels into a 3-bit colour index
+///    (`round(c/255)` for each channel c; equivalent to `c >= 128` for u8).
+/// 5. `ansi = 30 + ((bbit << 2) | (gbit << 1) | rbit)`.
+/// 6. If value == 2 → `ansi += 60`.
+///
+/// The returned `u16` is an exact integer code; no rounding tolerance applies.
+pub fn ansi16(rgb: [u8; 3]) -> u16 {
+    let hsv_vals = hsv(rgb);
+    let value = (hsv_vals[2] / 50.0).round() as i32;
+
+    if value == 0 {
+        return 30;
+    }
+
+    // Bits: round(c/255) for u8 c is 1 iff c >= 128, 0 otherwise.
+    // Provably equivalent: c>=128 ⇔ round(c/255)==1 for all u8 inputs.
+    let rbit = if rgb[0] >= 128 { 1u16 } else { 0u16 };
+    let gbit = if rgb[1] >= 128 { 1u16 } else { 0u16 };
+    let bbit = if rgb[2] >= 128 { 1u16 } else { 0u16 };
+
+    let mut ansi: u16 = 30 + ((bbit << 2) | (gbit << 1) | rbit);
+
+    if value == 2 {
+        ansi += 60;
+    }
+
+    ansi
+}
+
+/// Converts an RGB triple to an ANSI-256 terminal colour code (16–231 for the
+/// 6×6×6 colour cube, 232–255 for the 24‑step greyscale ramp).
+///
+/// Faithful port of `convert.rgb.ansi256` (color-convert@3.1.3 conversions.js,
+/// lines 673–699). The algorithm:
+///
+/// 1. Detect greyscale: if `(r >> 4) == (g >> 4) == (b >> 4)`:
+///    a. `r < 8` → 16
+///    b. `r > 248` → 231
+///    c. otherwise → `round((r - 8) / 247 * 24) + 232`
+/// 2. Otherwise (colour cube):
+///    `ansi = 16 + 36 * round(r / 255 * 5) + 6 * round(g / 255 * 5) + round(b / 255 * 5)`
+///
+/// The returned `u16` is an exact integer code; no rounding tolerance applies.
+pub fn ansi256(rgb: [u8; 3]) -> u16 {
+    let r = rgb[0];
+    let g = rgb[1];
+    let b = rgb[2];
+
+    // Greyscale detection: JS compares `r >> 4 === g >> 4 && g >> 4 === b >> 4`
+    // using u8 bit shifts directly on the raw 0–255 channel values.
+    if (r >> 4) == (g >> 4) && (g >> 4) == (b >> 4) {
+        if r < 8 {
+            return 16;
+        }
+        if r > 248 {
+            return 231;
+        }
+        return ((f64::from(r) - 8.0) / 247.0 * 24.0).round() as u16 + 232;
+    }
+
+    // Colour cube: quantise each channel to 0..=5, then pack into the ANSI-256
+    // cube index.  Named intermediates keep operator precedence obvious and
+    // the `as u16` casts safe (values are rounded f64 in the non-negative,
+    // low-integer range 0..=5).
+    let rq = (f64::from(r) / 255.0 * 5.0).round() as u16;
+    let gq = (f64::from(g) / 255.0 * 5.0).round() as u16;
+    let bq = (f64::from(b) / 255.0 * 5.0).round() as u16;
+
+    16 + 36 * rq + 6 * gq + bq
+}
+
 /// Converts an RGB triple to raw Apple 16-bit RGB floats
 /// `[r16 (0-65535), g16 (0-65535), b16 (0-65535)]`.
 ///
@@ -323,4 +414,65 @@ pub fn apple(rgb: [u8; 3]) -> [f64; 3] {
         (f64::from(rgb[1]) / 255.0) * 65535.0,
         (f64::from(rgb[2]) / 255.0) * 65535.0,
     ]
+}
+
+/// Converts an RGB triple to a 6-digit UPPERCASE hex string (e.g. `"8CC864"`).
+///
+/// Faithful port of `convert.rgb.hex` (color-convert@3.1.3 conversions.js,
+/// lines 746–755). Input channels are already `u8` (0–255), so the JS rounding
+/// and `& 0xFF` masking step is a no-op. The packed `u32` channel word is
+/// formatted with zero-padded uppercase hex digits via the standard library's
+/// `{:06X}` format specifier.
+pub fn hex(rgb: [u8; 3]) -> String {
+    let int_val: u32 = (u32::from(rgb[0]) << 16) | (u32::from(rgb[1]) << 8) | u32::from(rgb[2]);
+    format!("{int_val:06X}")
+}
+
+/// Finds the nearest CSS color keyword for an RGB triple.
+///
+/// Faithful port of `convert.rgb.keyword` (color-convert@3.1.3 conversions.js,
+/// lines 241–264). The algorithm is:
+///
+/// 1. **Exact match** — scan all entries in `color_name::CSS_COLORS` in insertion
+///    order. If multiple entries share the same RGB, the *last* one wins (mirrors
+///    the JS `reverseKeywords` object-assignment behaviour where a later key
+///    overwrites an earlier one, e.g. `"grey"` overwrites `"gray"` for
+///    `[128,128,128]`).
+/// 2. **Nearest neighbour** (no exact match) — iterate in insertion order,
+///    compute squared Euclidean distance with `i32` arithmetic, and track the
+///    minimum with **strict `<`** so the *first* entry at the minimum distance
+///    wins (ties broken by insertion order).
+pub fn keyword(rgb: [u8; 3]) -> String {
+    // Exact-match pass: last matching entry wins (JS reverseKeywords semantics).
+    let mut exact: Option<&str> = None;
+    for (name, entry_rgb) in &crate::color_name::CSS_COLORS {
+        if *entry_rgb == rgb {
+            exact = Some(name);
+        }
+    }
+    if let Some(name) = exact {
+        return name.to_string();
+    }
+
+    // Nearest-neighbour fallback: first entry at minimum squared distance wins
+    // (strict `<`).
+    let r = i32::from(rgb[0]);
+    let g = i32::from(rgb[1]);
+    let b = i32::from(rgb[2]);
+
+    let mut best_name: &str = "";
+    let mut best_dist: i32 = i32::MAX;
+
+    for (name, entry_rgb) in &crate::color_name::CSS_COLORS {
+        let dr = r - i32::from(entry_rgb[0]);
+        let dg = g - i32::from(entry_rgb[1]);
+        let db = b - i32::from(entry_rgb[2]);
+        let dist = dr * dr + dg * dg + db * db;
+        if dist < best_dist {
+            best_dist = dist;
+            best_name = name;
+        }
+    }
+
+    best_name.to_string()
 }
