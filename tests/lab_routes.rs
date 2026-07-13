@@ -42,3 +42,27 @@ fn lab_to_xyz_matches_js_vectors() {
         VecValue::Nums(vec![x.round(), y.round(), z.round()])
     });
 }
+
+// ── lab → lch ────────────────────────────────────────────────────────────────
+//
+// API pinned for GREEN: `lab::lch(lab: [f64; 3]) -> [f64; 3]` returning raw
+// floats `[l (0-100), c (0-approx 134), h (0-360)]`, mirroring
+// `convert.lab.lch` in color-convert's conversions.js (lines 613–629).
+// The JS reference computes:
+//   l = lab[0]; a = lab[1]; b = lab[2];
+//   hr = Math.atan2(b, a); h = hr * 360 / 2 / PI;
+//   if h < 0 { h += 360 }
+//   c = sqrt(a*a + b*b); return [l, c, h]
+// Tolerance: 0.0. After per-channel rounding the output must match the
+// rounded JS vector EXACTLY. All channels (l, c, h) are non-negative.
+
+#[test]
+fn lab_to_lch_matches_js_vectors() {
+    let vectors = load_route("lab", "lch");
+    assert_cases("lab_to_lch", &vectors.cases, 0.0, |input| {
+        let [l, c, h] = lab::lch(lab_input(input));
+        // Mirror the JS public wrapper's per-channel Math.round.
+        // All channels are non-negative, so f64::round ≡ JS Math.round.
+        VecValue::Nums(vec![l.round(), c.round(), h.round()])
+    });
+}
