@@ -60,3 +60,15 @@ fn xyz_to_lab_matches_js_vectors() {
         VecValue::Nums(vec![js_round(l), js_round(a), js_round(b)])
     });
 }
+
+// ── xyz → oklab ──────────────────────────────────────────────────────────────
+
+#[test]
+fn xyz_to_oklab_matches_js_vectors() {
+    let vectors = load_route("xyz", "oklab");
+    assert_cases("xyz_to_oklab", &vectors.cases, 0.0, |input| {
+        let [l, a, b] = xyz::oklab(xyz_input(input));
+        // a and b may be negative → use JS-equivalent rounding.
+        VecValue::Nums(vec![js_round(l), js_round(a), js_round(b)])
+    });
+}
