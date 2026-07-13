@@ -279,3 +279,31 @@ fn rgb_to_gray_matches_js_vectors() {
         VecValue::Nums(vec![v.round()])
     });
 }
+
+// ── rgb → apple ────────────────────────────────────────────────────────
+
+/// API pinned for GREEN: `rgb::apple(rgb: [u8; 3]) -> [f64; 3]` returning
+/// RAW (unrounded) floats `[r16 (0-65535), g16 (0-65535), b16 (0-65535)]`,
+/// mirroring `convert.rgb.apple` in color-convert's conversions.js
+/// (lines 941-943).
+///
+/// The JS algorithm linearly maps each u8 channel to Apple 16-bit range:
+///   return [(r/255)*65535, (g/255)*65535, (b/255)*65535]
+///
+/// The JS public wrapper applies `Math.round` per channel — so the test
+/// rounds here.
+///
+/// Tolerance: 0.0 after per-channel rounding (exact match against the
+/// JS-rounded vectors in `tests/vectors/rgb_to_apple.json`, 32 cases).
+/// All apple channels are non-negative, so Rust's half-away-from-zero
+/// `f64::round` coincides with JS `Math.round` (half toward +infinity)
+/// on this route.
+#[test]
+fn rgb_to_apple_matches_js_vectors() {
+    let vectors = load_route("rgb", "apple");
+    assert_cases("rgb_to_apple", &vectors.cases, 0.0, |input| {
+        let [r, g, b] = rgb::apple(rgb_input(input));
+        // Mirror the JS public wrapper's per-channel Math.round (see module doc).
+        VecValue::Nums(vec![r.round(), g.round(), b.round()])
+    });
+}
