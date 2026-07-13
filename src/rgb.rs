@@ -6,6 +6,19 @@
 //! (or test's) responsibility. Tolerance is documented per route in the
 //! vector tests (currently 0.0 after rounding for rgb→hsl).
 
+/// Normalize an RGB `[u8; 3]` input to per-channel `f64` fractions in `[0.0, 1.0]`,
+/// returning the three channel values along with their min, max, and delta (max-min).
+#[inline]
+fn normalize_rgb(rgb: [u8; 3]) -> (f64, f64, f64, f64, f64, f64) {
+    let r = f64::from(rgb[0]) / 255.0;
+    let g = f64::from(rgb[1]) / 255.0;
+    let b = f64::from(rgb[2]) / 255.0;
+    let min = r.min(g).min(b);
+    let max = r.max(g).max(b);
+    let delta = max - min;
+    (r, g, b, min, max, delta)
+}
+
 /// Converts an RGB triple to raw HSL floats `[h (0-360), s (0-100), l (0-100)]`.
 ///
 /// Faithful port of `convert.rgb.hsl` (color-convert@3.1.3 conversions.js).
@@ -13,12 +26,7 @@
 /// values are exact `/255.0` divisions of the same inputs, so equality is
 /// well-defined and matches the JS control flow bit-for-bit.
 pub fn hsl(rgb: [u8; 3]) -> [f64; 3] {
-    let r = f64::from(rgb[0]) / 255.0;
-    let g = f64::from(rgb[1]) / 255.0;
-    let b = f64::from(rgb[2]) / 255.0;
-    let min = r.min(g).min(b);
-    let max = r.max(g).max(b);
-    let delta = max - min;
+    let (r, g, b, min, max, delta) = normalize_rgb(rgb);
 
     let mut h = if max == min {
         0.0
@@ -56,11 +64,7 @@ pub fn hsl(rgb: [u8; 3]) -> [f64; 3] {
 /// strict equality; the compared values are exact `/255.0` divisions of the
 /// same inputs, so direct `==` reproduces that control flow bit-for-bit.
 pub fn hsv(rgb: [u8; 3]) -> [f64; 3] {
-    let r = f64::from(rgb[0]) / 255.0;
-    let g = f64::from(rgb[1]) / 255.0;
-    let b = f64::from(rgb[2]) / 255.0;
-    let v = r.max(g).max(b);
-    let diff = v - r.min(g).min(b);
+    let (r, g, b, _min, v, diff) = normalize_rgb(rgb);
 
     let (h, s) = if diff == 0.0 {
         (0.0, 0.0)
