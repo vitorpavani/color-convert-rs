@@ -11,6 +11,18 @@ name = "color_convert_rs"
 # no unwrap()/expect() in lib paths (Rule 9: issue #4).
 thiserror = "2.0.17"
 
+# Runtime GPU capability probe: at startup, enumerate wgpu adapters to decide
+# whether the GPU compute path (CubeCL via wgpu) is available, or whether to
+# fall back to the CPU-SIMD path. Only Instance creation and adapter enumeration
+# are used — no rendering, shaders, or device creation. (Rule 9: issue #21)
+wgpu = "30.0.0"
+
+# Blocking executor for the wgpu async adapter-enumeration future.
+# Tiny (<1K LOC), single-purpose crate — no executor framework pulled in.
+# Used only in the one-shot probe; not a general-purpose async dependency.
+# (Rule 9: issue #21)
+pollster = "0.4"
+
 [profile.release]
 lto = true
 
