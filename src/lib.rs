@@ -9,8 +9,11 @@ mod error;
 pub mod hsl;
 pub mod hsv;
 pub mod hwb;
+pub mod lab;
+pub mod lch;
 pub mod oklab;
 pub mod oklch;
 pub mod rgb;
+pub mod xyz;
 
 pub use error::Error;
