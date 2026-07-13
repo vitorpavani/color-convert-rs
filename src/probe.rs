@@ -5,6 +5,15 @@
 //! probe returns [`Backend::Gpu`]; otherwise it falls back to
 //! [`Backend::CpuSimd`] so the library runs on any server without a panic.
 //!
+//! # Integration with other modules
+//!
+//! - **Benchmark ledger (#19):** calls [`gpu_present`] to populate the
+//!   `gpu_present` field in `benchmarks/results.jsonl`, recording whether
+//!   the GPU tier was available at measurement time.
+//! - **GPU compute kernel (#22):** checks [`probe`] at startup to decide
+//!   whether to route pixel batches through the CubeCL/wgpu kernel or the
+//!   CPU-SIMD path.
+//!
 //! # Safety (Rule 5)
 //!
 //! The probe MUST NEVER panic on a GPU-less host. Every GPU-init path is
