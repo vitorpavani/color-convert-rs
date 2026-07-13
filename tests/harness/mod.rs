@@ -41,13 +41,38 @@ pub struct Vectors {
 
 /// Loads and parses `tests/vectors/<route>.json` relative to the crate root.
 pub fn load_vectors(route: &str) -> Vectors {
-    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("tests/vectors")
-        .join(format!("{route}.json"));
-    let json = fs::read_to_string(&path)
-        .unwrap_or_else(|err| panic!("failed to read vector file {}: {err}", path.display()));
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/vectors");
+    let path = dir.join(format!("{route}.json"));
+    let json = fs::read_to_string(&path).unwrap_or_else(|err| {
+        panic!(
+            "failed to read vector file {}: {err}\navailable routes: {}",
+            path.display(),
+            available_routes(&dir)
+        )
+    });
     serde_json::from_str(&json)
         .unwrap_or_else(|err| panic!("failed to parse vector file {}: {err}", path.display()))
+}
+
+/// Sorted, comma-separated route names found in the vectors directory, so a
+/// mistyped route name in one of the ~50 route suites fails with the fix in
+/// the message.
+fn available_routes(dir: &Path) -> String {
+    let Ok(entries) = fs::read_dir(dir) else {
+        return format!("<cannot read {}>", dir.display());
+    };
+    let mut routes: Vec<String> = entries
+        .filter_map(|entry| {
+            let path = entry.ok()?.path();
+            if path.extension().is_some_and(|ext| ext == "json") {
+                Some(path.file_stem()?.to_string_lossy().into_owned())
+            } else {
+                None
+            }
+        })
+        .collect();
+    routes.sort();
+    routes.join(", ")
 }
 
 /// Runs `convert` over every case and panics on the first mismatch beyond
@@ -62,8 +87,11 @@ pub fn assert_cases(
         let actual = convert(&case.input);
         if !matches_within(&case.expected, &actual, tolerance) {
             panic!(
-                "vector mismatch: route={route} case={index} input={:?} \
-                 expected={:?} actual={actual:?} tolerance={tolerance}",
+                "vector mismatch: route={route} case={index}\n  \
+                 input:     {:?}\n  \
+                 expected:  {:?}\n  \
+                 actual:    {actual:?}\n  \
+                 tolerance: {tolerance}",
                 case.input, case.expected
             );
         }

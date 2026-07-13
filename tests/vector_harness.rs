@@ -56,4 +56,14 @@ fn harness_loads_vectors_and_checks_cases_parametrically() {
         .first()
         .expect("rgb_to_hex.json must contain at least one case");
     assert_eq!(first.expected, VecValue::Text("000000".to_string()));
+
+    // 4. Untagged variant ordering: a bare JSON number must parse as `Num`,
+    //    never `Nums`/`Text` (rgb_to_ansi16.json case 0: [0,0,0] -> 30).
+    let ansi_vectors = load_vectors("rgb_to_ansi16");
+    let first = ansi_vectors
+        .cases
+        .first()
+        .expect("rgb_to_ansi16.json must contain at least one case");
+    assert_eq!(first.input, VecValue::Nums(vec![0.0, 0.0, 0.0]));
+    assert_eq!(first.expected, VecValue::Num(30.0));
 }
