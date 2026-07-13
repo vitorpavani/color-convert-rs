@@ -40,6 +40,41 @@ A change is **kept only if it beats BOTH**:
 on the target metric, with all correctness tests still green. Otherwise it is reverted — and the
 negative result is still recorded (negative results are article material).
 
+## Running each tier
+
+```bash
+# js baseline
+node benchmarks/js/bench.mjs
+
+# cpu tiers (Rust, best-of-N via std::time)
+cargo run --release --bin bench       # scalar/general cpu routes
+cargo run --release --bin bench_simd  # wide-SIMD hot routes
+
+# gpu tier (CubeCL/wgpu)
+./run-bench-gpu.sh                     # see the NixOS/NVIDIA note below
+```
+
+### GPU tier on NixOS + NVIDIA (important)
+
+CubeCL uses the wgpu backend, which finds the GPU through the **Vulkan loader** and the
+**NVIDIA ICD manifest**. On NixOS these are *not* on the default search path, so a bare
+`cargo run --bin bench_gpu` enumerates zero adapters — the runtime probe then (correctly)
+reports `CpuSimd` and the GPU tier is **silently skipped** even on a machine with a real GPU.
+
+The committed **`run-bench-gpu.sh`** wrapper fixes this by pointing the process at the system
+Vulkan loader + NVIDIA ICD before launching:
+
+```bash
+LD_LIBRARY_PATH="<vulkan-loader>/lib:/run/opengl-driver/lib"
+VK_ICD_FILENAMES="/run/opengl-driver/share/vulkan/icd.d/nvidia_icd.json"
+```
+
+With that env set, `WgpuRuntime::client` succeeds, the probe resolves to `Gpu`, and the GPU
+tier is measured. On a genuinely GPU-less host the library still degrades cleanly to CPU-SIMD
+without panicking (Rule 5) — the wrapper just makes a present GPU *discoverable*. This mirrors
+the reference `gpu-matmul-bench/run.sh`. On non-NixOS hosts with the loader on the default
+path, run `cargo run --release --bin bench_gpu` directly.
+
 ## How to read the ledger
 
 `results.jsonl` is append-only history. Never rewrite it. To see progress for a route:
@@ -51,8 +86,15 @@ rg '"route":"rgb->hsl"' benchmarks/results.jsonl | rg '"tier":"cpu"'
 
 ## Rollup table
 
-<!-- Regenerated from results.jsonl by the summary step. Populated during the coding session. -->
+<!-- Derived from results.jsonl. N=100,000 pixels, best-of-N (20 timed, 3 warmup),
+     host: NVIDIA RTX 2000 Ada laptop. Higher MP/s is better. -->
 
-| route | js (baseline) | cpu (SIMD) | gpu (CubeCL) | cpu speedup | gpu speedup | commit |
-|-------|---------------|------------|--------------|-------------|-------------|--------|
-| _(populated once measurements begin)_ | | | | | | |
+| route | js baseline | cpu | gpu (CubeCL) | cpu vs js | gpu vs js |
+|-------|-------------|-----|--------------|-----------|-----------|
+| rgb→lab | 7.24 MP/s | 8.33 MP/s | **14.01 MP/s** | 1.15× | **1.94×** |
+| rgb→hsl | 18.77 MP/s | 19.46 MP/s | — | 1.04× | — |
+| rgb→xyz | — | 24.65 MP/s (SIMD) | — | — | — |
+
+> GPU currently measured for `rgb→lab` (the matrix + gamma + LAB-transfer hot route). The GPU
+> beats both the JS baseline and the CPU-SIMD path → `decision:"kept"`. Numbers are single-host
+> snapshots for keep/revert decisions, not statistically rigorous criterion runs.
