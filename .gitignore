@@ -1,0 +1,16 @@
+/target
+Cargo.lock
+
+# Git worktree storage — one dir per branch for parallel agent isolation (never commit)
+.worktrees/
+
+# Node (JS baseline for benchmarks)
+node_modules/
+benchmarks/js/node_modules/
+
+# OS / editor
+.DS_Store
+*.swp
+
+# Benchmark scratch (raw outputs kept out; the committed ledger lives in benchmarks/results.jsonl)
+benchmarks/tmp/
