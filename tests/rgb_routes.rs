@@ -136,3 +136,55 @@ fn rgb_to_xyz_matches_js_vectors() {
         VecValue::Nums(vec![x.round(), y.round(), z.round()])
     });
 }
+
+// ── shared test helpers ──────────────────────────────────────────────
+
+/// Emulates JS `Math.round`: rounds half toward +infinity.
+///
+/// Rust's `f64::round` rounds half **away from zero**, which differs on
+/// negative half-integers:
+///
+/// | value | JS `Math.round` | Rust `f64::round` |
+/// |-------|-----------------|-------------------|
+/// | -0.5  | 0               | -1                |
+/// | -1.5  | -1              | -2                |
+///
+/// `(x + 0.5).floor()` reproduces `Math.round` exactly for all values
+/// (including negatives). This helper is reused by routes with channels
+/// that may be negative (lab, oklab, …).
+fn js_round(x: f64) -> f64 {
+    (x + 0.5).floor()
+}
+
+// ── rgb → lab ────────────────────────────────────────────────────────
+
+/// API pinned for GREEN: `rgb::lab(rgb: [u8; 3]) -> [f64; 3]` returning RAW
+/// (unrounded) floats `[l (0-100), a, b]`, mirroring
+/// `convert.rgb.lab` in color-convert's conversions.js (lines 283-302).
+///
+/// The JS algorithm:
+///   xyz  = rgb.xyz(rgb)
+///   x   /= 95.047;  y /= 100;  z /= 108.883
+///   f(v) = v > LAB_FT ? v^(1/3) : 7.787*v + 16/116     (LAB_FT = (6/29)^3)
+///   l    = 116*y - 16
+///   a    = 500*(x - y)
+///   b    = 200*(y - z)
+///
+/// The `a` and `b` channels **can be negative**, which creates a
+/// rounding-mode divergence: JS `Math.round` rounds half toward +infinity
+/// while Rust's `f64::round` rounds half away from zero.  We therefore
+/// apply `js_round` (defined above) to **every** channel in the closure
+/// to faithfully reproduce the JS public wrapper's per-channel
+/// `Math.round` behaviour.
+///
+/// Tolerance: 0.0 after per-channel `js_round` (exact match against the
+/// JS-rounded vectors in `tests/vectors/rgb_to_lab.json`, 32 cases).
+#[test]
+fn rgb_to_lab_matches_js_vectors() {
+    let vectors = load_route("rgb", "lab");
+    assert_cases("rgb_to_lab", &vectors.cases, 0.0, |input| {
+        let [l, a, b] = rgb::lab(rgb_input(input));
+        // Apply JS-faithful rounding — a,b may be negative (see doc above).
+        VecValue::Nums(vec![js_round(l), js_round(a), js_round(b)])
+    });
+}
