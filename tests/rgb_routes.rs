@@ -114,3 +114,25 @@ fn rgb_to_cmyk_matches_js_vectors() {
         VecValue::Nums(vec![c.round(), m.round(), y.round(), k.round()])
     });
 }
+
+/// API pinned for GREEN: `rgb::xyz(rgb: [u8; 3]) -> [f64; 3]` returning RAW
+/// (unrounded) floats `[x (0-100), y (0-100), z (0-100)]`, mirroring
+/// `convert.rgb.xyz` in color-convert's conversions.js (lines 270-281).
+///
+/// The JS algorithm applies `srgbNonlinearTransformInv` to each channel/255,
+/// then multiplies by the sRGB→XYZ matrix, and returns `[x*100, y*100, z*100]`.
+/// The JS public wrapper applies `Math.round` per channel — so the test rounds here.
+///
+/// Tolerance: 0.0 after per-channel rounding (exact match against rounded JS vectors).
+/// All xyz channels are non-negative tristimulus values scaled 0-100, so Rust's
+/// half-away-from-zero `f64::round` coincides with JS `Math.round`
+/// (half toward +infinity) on this route.
+#[test]
+fn rgb_to_xyz_matches_js_vectors() {
+    let vectors = load_route("rgb", "xyz");
+    assert_cases("rgb_to_xyz", &vectors.cases, 0.0, |input| {
+        let [x, y, z] = rgb::xyz(rgb_input(input));
+        // Mirror the JS public wrapper's per-channel Math.round (see module doc).
+        VecValue::Nums(vec![x.round(), y.round(), z.round()])
+    });
+}
