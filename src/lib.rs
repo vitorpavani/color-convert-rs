@@ -3,6 +3,7 @@
 //! Conversion modules are born from failing tests in the Red/Green/Blue TDD
 //! loop — none exist until a test demands them.
 
+pub mod apple;
 pub mod cmyk;
 mod color_name;
 mod error;
