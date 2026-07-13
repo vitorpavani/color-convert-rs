@@ -73,3 +73,34 @@ fn rgb_to_hex_matches_js_vectors() {
         VecValue::Text(s)
     });
 }
+
+// ── rgb → keyword ─────────────────────────────────────────────────────
+
+/// API pinned for GREEN: `rgb::keyword(rgb: [u8; 3]) -> String` returning
+/// the nearest CSS color name in lowercase (e.g. `"black"`, `"dodgerblue"`,
+/// `"darkslategray"`), mirroring `convert.rgb.keyword` in color-convert's
+/// conversions.js (lines 241–264).
+///
+/// Algorithm:
+///
+/// ```text
+/// 1. exact-match in reverseKeywords (css-color-parse color-name table
+///    keyed by hex value); if found → that keyword.
+/// 2. nearest by squared Euclidean RGB distance over all 148 named CSS
+///    colors, breaking ties with first-match-wins in insertion order
+///    (strict `<` comparison).
+/// ```
+///
+/// The keyword output is a **string** — comparison is exact (`==`).
+/// Tolerance is irrelevant for string comparison but is passed as `0.0`
+/// to satisfy the `assert_cases` API.
+///
+/// Vector: `tests/vectors/rgb_to_keyword.json` (32 cases).
+#[test]
+fn rgb_to_keyword_matches_js_vectors() {
+    let vectors = load_route("rgb", "keyword");
+    assert_cases("rgb_to_keyword", &vectors.cases, 0.0, |input| {
+        let s = rgb::keyword(rgb_input(input));
+        VecValue::Text(s)
+    });
+}
