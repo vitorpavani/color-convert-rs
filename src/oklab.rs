@@ -13,5 +13,17 @@
 /// Faithful port of `convert.oklab.oklch` (color-convert@3.1.3 conversions.js,
 /// line 544–546), which delegates to `convert.lab.lch` (lines 613–628).
 pub fn oklch(oklab: [f64; 3]) -> [f64; 3] {
-    [oklab[0], oklab[1], oklab[2]]
+    let l = oklab[0];
+    let a = oklab[1];
+    let b = oklab[2];
+
+    let hr = b.atan2(a);
+    let mut h = hr * 360.0 / 2.0 / std::f64::consts::PI;
+    if h < 0.0 {
+        h += 360.0;
+    }
+
+    let c = (a * a + b * b).sqrt();
+
+    [l, c, h]
 }
