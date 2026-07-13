@@ -52,3 +52,20 @@ fn rgb_to_hsl_matches_js_vectors() {
         VecValue::Nums(vec![h.round(), s.round(), l.round()])
     });
 }
+
+/// API pinned for GREEN: `rgb::hsv(rgb: [u8; 3]) -> [f64; 3]` returning RAW
+/// (unrounded) floats `[h (0-360), s (0-100), v (0-100)]`, mirroring
+/// `convert.rgb.hsv` in color-convert's conversions.js (lines 128-186).
+///
+/// Tolerance: 0.0 after per-channel rounding, exactly as rgb→hsl above. All
+/// hsv channels are non-negative, so Rust's half-away-from-zero `f64::round`
+/// coincides with JS `Math.round` (half toward +infinity) on this route.
+#[test]
+fn rgb_to_hsv_matches_js_vectors() {
+    let vectors = load_route("rgb", "hsv");
+    assert_cases("rgb_to_hsv", &vectors.cases, 0.0, |input| {
+        let [h, s, v] = rgb::hsv(rgb_input(input));
+        // Mirror the JS public wrapper's per-channel Math.round (see module doc).
+        VecValue::Nums(vec![h.round(), s.round(), v.round()])
+    });
+}
