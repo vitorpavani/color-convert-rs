@@ -7,7 +7,7 @@
 //!
 //! Tolerance: 0.0 (exact comparison after manual JS-round emulation).
 
-use color_convert_rs::{Color, Model};
+use color_convert_rs::Color;
 
 /// JS `Math.round` emulation: rounds half toward +infinity.
 /// This matches JavaScript behaviour: `Math.round(-1.5) === -1`.
@@ -25,9 +25,15 @@ fn color_round_rounds_num_arrays_js_faithfully() {
     // Half values — JS Math.round(-1.5) = -1.
     let lab = Color::Lab([-1.5, 0.7, 2.3]);
     let rounded = lab.round();
-    assert_eq!(rounded, Color::Lab([js_round(-1.5), js_round(0.7), js_round(2.3)]));
+    assert_eq!(
+        rounded,
+        Color::Lab([js_round(-1.5), js_round(0.7), js_round(2.3)])
+    );
     // Verify the critical negative-half case: must be -1.0, not -2.0.
-    assert!((rounded).eq_array(&[-1.0, 1.0, 2.0]));
+    assert_eq!(
+        array_channels(&rounded),
+        &[js_round(-1.5), js_round(0.7), js_round(2.3)][..]
+    );
 }
 
 #[test]
@@ -48,24 +54,22 @@ fn color_round_passes_u16_variants_through() {
     assert_eq!(a256.round(), Color::Ansi256(196));
 }
 
-// Helper extension for comparing Color array variant contents.
-impl Color {
-    fn eq_array(&self, expected: &[f64]) -> bool {
-        match self {
-            Color::Rgb(v) => v == expected,
-            Color::Hsl(v) => v == expected,
-            Color::Hsv(v) => v == expected,
-            Color::Hwb(v) => v == expected,
-            Color::Cmyk(v) => v == expected,
-            Color::Xyz(v) => v == expected,
-            Color::Lab(v) => v == expected,
-            Color::Lch(v) => v == expected,
-            Color::Oklab(v) => v == expected,
-            Color::Oklch(v) => v == expected,
-            Color::Hcg(v) => v == expected,
-            Color::Apple(v) => v == expected,
-            Color::Gray(v) => v == expected,
-            _ => false,
-        }
+// Helper: extract the array channels from a Color variant, or panic.
+fn array_channels(c: &Color) -> &[f64] {
+    match c {
+        Color::Rgb(v) => v,
+        Color::Hsl(v) => v,
+        Color::Hsv(v) => v,
+        Color::Hwb(v) => v,
+        Color::Cmyk(v) => v,
+        Color::Xyz(v) => v,
+        Color::Lab(v) => v,
+        Color::Lch(v) => v,
+        Color::Oklab(v) => v,
+        Color::Oklch(v) => v,
+        Color::Hcg(v) => v,
+        Color::Apple(v) => v,
+        Color::Gray(v) => v,
+        _ => panic!("not an array variant: {c:?}"),
     }
 }
