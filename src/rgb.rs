@@ -324,3 +324,15 @@ pub fn apple(rgb: [u8; 3]) -> [f64; 3] {
         (f64::from(rgb[2]) / 255.0) * 65535.0,
     ]
 }
+
+/// Converts an RGB triple to a 6-digit UPPERCASE hex string (e.g. `"8CC864"`).
+///
+/// Faithful port of `convert.rgb.hex` (color-convert@3.1.3 conversions.js,
+/// lines 746–755). Input channels are already `u8` (0–255), so the JS rounding
+/// and `& 0xFF` masking step is a no-op. The packed `u32` channel word is
+/// formatted with zero-padded uppercase hex digits via the standard library's
+/// `{:06X}` format specifier.
+pub fn hex(rgb: [u8; 3]) -> String {
+    let int_val: u32 = (u32::from(rgb[0]) << 16) | (u32::from(rgb[1]) << 8) | u32::from(rgb[2]);
+    format!("{int_val:06X}")
+}
