@@ -31,7 +31,7 @@ fn hsl_input(value: &VecValue) -> [f64; 3] {
     let VecValue::Nums(nums) = value else {
         panic!("hsl vector input must be VecValue::Nums, got {value:?}");
     };
-    let channels: Vec<f64> = nums.iter().copied().collect();
+    let channels: Vec<f64> = nums.to_vec();
     channels
         .try_into()
         .unwrap_or_else(|c| panic!("hsl input must have exactly 3 channels, got {c:?}"))
