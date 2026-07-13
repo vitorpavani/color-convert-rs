@@ -24,7 +24,25 @@
 ///   across all three channels, brightened (+3.5) when `code > 50`.
 /// - Chromatic codes use the low 3 bits of the colour index as RGB flags,
 ///   scaled by a multiplier (0.5 for regular, 1.0 for bright).
-pub fn rgb(_code: u16) -> [f64; 3] {
-    // STUB — returns a clearly wrong value so RED tests fail on assertion.
-    [42.0, 42.0, 42.0]
+pub fn rgb(code: u16) -> [f64; 3] {
+    let args = f64::from(code);
+    let color = args % 10.0;
+
+    // handle greyscale
+    if color == 0.0 || color == 7.0 {
+        let mut c = color;
+        if args > 50.0 {
+            c += 3.5; // bright
+        }
+        c = c / 10.5 * 255.0;
+        return [c, c, c];
+    }
+
+    // chromatic: low 3 bits of `color` are RGB flags
+    let mult = (if args > 50.0 { 1.0 } else { 0.0 } + 1.0) * 0.5;
+    let ci = color as i64; // JS bitwise: `args % 10` coerces to int
+    let r = ((ci & 1) as f64 * mult) * 255.0;
+    let g = (((ci >> 1) & 1) as f64 * mult) * 255.0;
+    let b = (((ci >> 2) & 1) as f64 * mult) * 255.0;
+    [r, g, b]
 }
