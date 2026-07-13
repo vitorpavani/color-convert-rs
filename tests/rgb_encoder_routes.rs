@@ -104,3 +104,34 @@ fn rgb_to_keyword_matches_js_vectors() {
         VecValue::Text(s)
     });
 }
+
+// ── rgb → ansi16 ───────────────────────────────────────────────────────
+
+/// API pinned for GREEN: `rgb::ansi16(rgb: [u8; 3]) -> u16` returning an
+/// integer ANSI-16 color code (30–37, 40–47, 90–97, 100–107), mirroring
+/// `convert.rgb.ansi16` in color-convert's conversions.js (lines 643–666).
+///
+/// Algorithm:
+///
+/// ```text
+/// 1. Convert RGB to HSV via rgb.hsv(args)
+/// 2. value = round(HSV.v / 50)
+/// 3. If value == 0 → return 30 (foreground black)
+/// 4. ansi = 30 + ((round(b/255) << 2) | (round(g/255) << 1) | round(r/255))
+/// 5. If value == 2 → ansi += 60
+/// 6. Return ansi
+/// ```
+///
+/// The ansi16 output is an integer code — comparison is exact (`==`).
+/// Tolerance is `0.0` (irrelevant for integer comparison but required
+/// by the `assert_cases` API).
+///
+/// Vector: `tests/vectors/rgb_to_ansi16.json` (32 cases; [0,0,0] → 30).
+#[test]
+fn rgb_to_ansi16_matches_js_vectors() {
+    let vectors = load_route("rgb", "ansi16");
+    assert_cases("rgb_to_ansi16", &vectors.cases, 0.0, |input| {
+        let n = rgb::ansi16(rgb_input(input));
+        VecValue::Num(f64::from(n))
+    });
+}
