@@ -342,6 +342,48 @@ pub fn ansi16(rgb: [u8; 3]) -> u16 {
     ansi
 }
 
+/// Converts an RGB triple to an ANSI-256 terminal colour code (16–231 for the
+/// 6×6×6 colour cube, 232–255 for the 24‑step greyscale ramp).
+///
+/// Faithful port of `convert.rgb.ansi256` (color-convert@3.1.3 conversions.js,
+/// lines 673–699). The algorithm:
+///
+/// 1. Detect greyscale: if `(r >> 4) == (g >> 4) == (b >> 4)`:
+///    a. `r < 8` → 16
+///    b. `r > 248` → 231
+///    c. otherwise → `round((r - 8) / 247 * 24) + 232`
+/// 2. Otherwise (colour cube):
+///    `ansi = 16 + 36 * round(r / 255 * 5) + 6 * round(g / 255 * 5) + round(b / 255 * 5)`
+///
+/// The returned `u16` is an exact integer code; no rounding tolerance applies.
+pub fn ansi256(rgb: [u8; 3]) -> u16 {
+    let r = rgb[0];
+    let g = rgb[1];
+    let b = rgb[2];
+
+    // Greyscale detection: JS compares `r >> 4 === g >> 4 && g >> 4 === b >> 4`
+    // using u8 bit shifts directly on the raw 0–255 channel values.
+    if (r >> 4) == (g >> 4) && (g >> 4) == (b >> 4) {
+        if r < 8 {
+            return 16;
+        }
+        if r > 248 {
+            return 231;
+        }
+        return ((f64::from(r) - 8.0) / 247.0 * 24.0).round() as u16 + 232;
+    }
+
+    // Colour cube: quantise each channel to 0..=5, then pack into the ANSI-256
+    // cube index.  Named intermediates keep operator precedence obvious and
+    // the `as u16` casts safe (values are rounded f64 in the non-negative,
+    // low-integer range 0..=5).
+    let rq = (f64::from(r) / 255.0 * 5.0).round() as u16;
+    let gq = (f64::from(g) / 255.0 * 5.0).round() as u16;
+    let bq = (f64::from(b) / 255.0 * 5.0).round() as u16;
+
+    16 + 36 * rq + 6 * gq + bq
+}
+
 /// Converts an RGB triple to raw Apple 16-bit RGB floats
 /// `[r16 (0-65535), g16 (0-65535), b16 (0-65535)]`.
 ///
