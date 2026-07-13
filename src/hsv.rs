@@ -65,3 +65,16 @@ pub fn hsl(hsv: [f64; 3]) -> [f64; 3] {
 
     [h, sl * 100.0, l * 100.0]
 }
+
+/// Converts an HSV triple to raw HCG floats `[h (0-360), c (0-100), g (0-100)]`.
+///
+/// Faithful port of `convert.hsv.hcg` (color-convert@3.1.3 conversions.js,
+/// lines 820–832). The grey component `g` is derived as `(v-c)/(1-c)` when
+/// chroma `c < 1`; when `c == 1` (fully saturated), `g` is clamped to 0.
+pub fn hcg(hsv: [f64; 3]) -> [f64; 3] {
+    let s = hsv[1] / 100.0;
+    let v = hsv[2] / 100.0;
+    let c = s * v;
+    let f = if c < 1.0 { (v - c) / (1.0 - c) } else { 0.0 };
+    [hsv[0], c * 100.0, f * 100.0]
+}
