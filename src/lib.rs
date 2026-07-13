@@ -6,6 +6,7 @@
 pub mod cmyk;
 mod color_name;
 mod error;
+pub mod hcg;
 pub mod hsl;
 pub mod hsv;
 pub mod hwb;

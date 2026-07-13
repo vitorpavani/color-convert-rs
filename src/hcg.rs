@@ -1,0 +1,48 @@
+//! Conversions FROM the `hcg` colour model into other colour spaces
+//! — ported from `convert.hcg.*` in color-convert@3.1.3 `conversions.js`.
+//!
+//! The HCG model (hue, chroma, gray) represents a colour as:
+//!
+//! - **hue** (0-360°) — the colour angle on the wheel.
+//! - **chroma** (0-100) — purity/saturation relative to the maximum the
+//!   lightness can support.
+//! - **gray** (0-100) — the gray component that mixes with the pure hue.
+//!
+//! ## Output
+//!
+//! The colour-space routes return **raw (unrounded) floats**; the per-channel
+//! rounding (`Math.round`) applied by the JS public wrapper is the caller's
+//! (or test's) responsibility, and comparison is exact at tolerance 0.0 after
+//! that rounding. See the vector tests in `tests/hcg_routes.rs`.
+
+/// Converts an HCG triple to raw RGB floats `[r (0-255), g (0-255), b (0-255)]`.
+///
+/// Faithful port of `convert.hcg.rgb` (color-convert@3.1.3 conversions.js,
+/// lines 834–884).
+pub fn rgb(_hcg: [f64; 3]) -> [f64; 3] {
+    todo!()
+}
+
+/// Converts an HCG triple to raw HSV floats `[h (0-360), s (0-100), v (0-100)]`.
+///
+/// Faithful port of `convert.hcg.hsv` (color-convert@3.1.3 conversions.js,
+/// lines 886–898).
+pub fn hsv(_hcg: [f64; 3]) -> [f64; 3] {
+    todo!()
+}
+
+/// Converts an HCG triple to raw HSL floats `[h (0-360), s (0-100), l (0-100)]`.
+///
+/// Faithful port of `convert.hcg.hsl` (color-convert@3.1.3 conversions.js,
+/// lines 900–914).
+pub fn hsl(_hcg: [f64; 3]) -> [f64; 3] {
+    todo!()
+}
+
+/// Converts an HCG triple to raw HWB floats `[h (0-360), w (0-100), b (0-100)]`.
+///
+/// Faithful port of `convert.hcg.hwb` (color-convert@3.1.3 conversions.js,
+/// lines 916–921).
+pub fn hwb(_hcg: [f64; 3]) -> [f64; 3] {
+    todo!()
+}
