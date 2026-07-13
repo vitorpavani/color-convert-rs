@@ -20,17 +20,39 @@
 //! comparisons are exact; no rounding tolerance applies.  Vector tests
 //! live in `tests/rgb_encoder_routes.rs`.
 
-/// Normalize an RGB `[u8; 3]` input to per-channel `f64` fractions in `[0.0, 1.0]`,
-/// returning the three channel values along with their min, max, and delta (max-min).
+/// Normalize an RGB `[f64; 3]` input (0–255 range) to per-channel `f64` fractions
+/// in `[0.0, 1.0]`, returning the three channel values along with their min, max,
+/// and delta (max-min). Used by the `_f64` graph-adapter variants.
 #[inline]
-fn normalize_rgb(rgb: [u8; 3]) -> (f64, f64, f64, f64, f64, f64) {
-    let r = f64::from(rgb[0]) / 255.0;
-    let g = f64::from(rgb[1]) / 255.0;
-    let b = f64::from(rgb[2]) / 255.0;
+pub(crate) fn normalize_rgb_f64(rgb: [f64; 3]) -> (f64, f64, f64, f64, f64, f64) {
+    let r = rgb[0] / 255.0;
+    let g = rgb[1] / 255.0;
+    let b = rgb[2] / 255.0;
     let min = r.min(g).min(b);
     let max = r.max(g).max(b);
     let delta = max - min;
     (r, g, b, min, max, delta)
+}
+
+/// Normalize an RGB `[u8; 3]` input to per-channel `f64` fractions in `[0.0, 1.0]`,
+/// returning the three channel values along with their min, max, and delta (max-min).
+/// Retained for potential internal use; all existing routes now go through `_f64`.
+#[allow(
+    dead_code,
+    reason = "retained for u8 entry points if needed (issue #17)"
+)]
+#[inline]
+fn normalize_rgb(rgb: [u8; 3]) -> (f64, f64, f64, f64, f64, f64) {
+    normalize_rgb_f64([f64::from(rgb[0]), f64::from(rgb[1]), f64::from(rgb[2])])
+}
+
+/// Round a float RGB channel (0–255) to a `u8` for terminal/label encoders.
+/// Uses JS `Math.round` semantics: `(x + 0.5).floor().clamp(0, 255)`.
+/// Called by the `_f64` graph-adapter variants.
+#[allow(dead_code, reason = "called by _f64 graph adapters (issue #17)")]
+#[inline]
+fn channel_to_u8(x: f64) -> u8 {
+    (x + 0.5).floor().clamp(0.0, 255.0) as u8
 }
 
 /// Converts an RGB triple to raw HSL floats `[h (0-360), s (0-100), l (0-100)]`.
@@ -40,7 +62,13 @@ fn normalize_rgb(rgb: [u8; 3]) -> (f64, f64, f64, f64, f64, f64) {
 /// values are exact `/255.0` divisions of the same inputs, so equality is
 /// well-defined and matches the JS control flow bit-for-bit.
 pub fn hsl(rgb: [u8; 3]) -> [f64; 3] {
-    let (r, g, b, min, max, delta) = normalize_rgb(rgb);
+    hsl_f64([f64::from(rgb[0]), f64::from(rgb[1]), f64::from(rgb[2])])
+}
+
+/// Same as [`hsl`] but accepts raw float RGB channels (0–255), used by the
+/// graph adapter to avoid a lossy u8 round-trip on intermediate values.
+pub(crate) fn hsl_f64(rgb: [f64; 3]) -> [f64; 3] {
+    let (r, g, b, min, max, delta) = normalize_rgb_f64(rgb);
 
     let mut h = if max == min {
         0.0
@@ -78,7 +106,12 @@ pub fn hsl(rgb: [u8; 3]) -> [f64; 3] {
 /// strict equality; the compared values are exact `/255.0` divisions of the
 /// same inputs, so direct `==` reproduces that control flow bit-for-bit.
 pub fn hsv(rgb: [u8; 3]) -> [f64; 3] {
-    let (r, g, b, _min, v, diff) = normalize_rgb(rgb);
+    hsv_f64([f64::from(rgb[0]), f64::from(rgb[1]), f64::from(rgb[2])])
+}
+
+/// Same as [`hsv`] but accepts raw float RGB channels (0–255).
+pub(crate) fn hsv_f64(rgb: [f64; 3]) -> [f64; 3] {
+    let (r, g, b, _min, v, diff) = normalize_rgb_f64(rgb);
 
     let (h, s) = if diff == 0.0 {
         (0.0, 0.0)
@@ -116,8 +149,13 @@ pub fn hsv(rgb: [u8; 3]) -> [f64; 3] {
 /// blackness are computed from the min and max of the normalized channel
 /// fractions.
 pub fn hwb(rgb: [u8; 3]) -> [f64; 3] {
-    let (_r, _g, _b, min, max, _delta) = normalize_rgb(rgb);
-    let h = hsl(rgb)[0];
+    hwb_f64([f64::from(rgb[0]), f64::from(rgb[1]), f64::from(rgb[2])])
+}
+
+/// Same as [`hwb`] but accepts raw float RGB channels (0–255).
+pub(crate) fn hwb_f64(rgb: [f64; 3]) -> [f64; 3] {
+    let (_r, _g, _b, min, max, _delta) = normalize_rgb_f64(rgb);
+    let h = hsl_f64(rgb)[0];
     [h, min * 100.0, (1.0 - max) * 100.0]
 }
 
@@ -128,9 +166,14 @@ pub fn hwb(rgb: [u8; 3]) -> [f64; 3] {
 /// the JS `|| 0` fallback: the expression `(1-r-k)/(1-k) || 0` evaluates the
 /// division result, and if falsy (0 or NaN) falls through to 0.
 pub fn cmyk(rgb: [u8; 3]) -> [f64; 4] {
-    let r = f64::from(rgb[0]) / 255.0;
-    let g = f64::from(rgb[1]) / 255.0;
-    let b = f64::from(rgb[2]) / 255.0;
+    cmyk_f64([f64::from(rgb[0]), f64::from(rgb[1]), f64::from(rgb[2])])
+}
+
+/// Same as [`cmyk`] but accepts raw float RGB channels (0–255).
+pub(crate) fn cmyk_f64(rgb: [f64; 3]) -> [f64; 4] {
+    let r = rgb[0] / 255.0;
+    let g = rgb[1] / 255.0;
+    let b = rgb[2] / 255.0;
 
     let k = (1.0 - r).min(1.0 - g).min(1.0 - b);
     let denom = 1.0 - k;
@@ -174,9 +217,14 @@ fn srgb_nonlinear_transform_inv(c: f64) -> f64 {
 /// illuminant, 2° observer). The matrix coefficients are taken verbatim
 /// from the JS source.
 pub fn xyz(rgb: [u8; 3]) -> [f64; 3] {
-    let r = srgb_nonlinear_transform_inv(f64::from(rgb[0]) / 255.0);
-    let g = srgb_nonlinear_transform_inv(f64::from(rgb[1]) / 255.0);
-    let b = srgb_nonlinear_transform_inv(f64::from(rgb[2]) / 255.0);
+    xyz_f64([f64::from(rgb[0]), f64::from(rgb[1]), f64::from(rgb[2])])
+}
+
+/// Same as [`xyz`] but accepts raw float RGB channels (0–255).
+pub(crate) fn xyz_f64(rgb: [f64; 3]) -> [f64; 3] {
+    let r = srgb_nonlinear_transform_inv(rgb[0] / 255.0);
+    let g = srgb_nonlinear_transform_inv(rgb[1] / 255.0);
+    let b = srgb_nonlinear_transform_inv(rgb[2] / 255.0);
 
     let x = r * 0.4124564 + g * 0.3575761 + b * 0.1804375;
     let y = r * 0.2126729 + g * 0.7151522 + b * 0.0721750;
@@ -220,9 +268,14 @@ fn lab_transfer(t: f64) -> f64 {
 /// `[27, -2, -19]`). The caller (or test) is responsible for per-channel
 /// rounding to reproduce the JS public wrapper's `Math.round` behaviour.
 pub fn oklab(rgb: [u8; 3]) -> [f64; 3] {
-    let r = srgb_nonlinear_transform_inv(f64::from(rgb[0]) / 255.0);
-    let g = srgb_nonlinear_transform_inv(f64::from(rgb[1]) / 255.0);
-    let b = srgb_nonlinear_transform_inv(f64::from(rgb[2]) / 255.0);
+    oklab_f64([f64::from(rgb[0]), f64::from(rgb[1]), f64::from(rgb[2])])
+}
+
+/// Same as [`oklab`] but accepts raw float RGB channels (0–255).
+pub(crate) fn oklab_f64(rgb: [f64; 3]) -> [f64; 3] {
+    let r = srgb_nonlinear_transform_inv(rgb[0] / 255.0);
+    let g = srgb_nonlinear_transform_inv(rgb[1] / 255.0);
+    let b = srgb_nonlinear_transform_inv(rgb[2] / 255.0);
 
     // LMS cone response — linear sRGB → LMS, then cube root
     let lp = (0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b).cbrt();
@@ -249,7 +302,12 @@ pub fn oklab(rgb: [u8; 3]) -> [f64; 3] {
 /// responsible for per-channel rounding to reproduce the JS public
 /// wrapper's `Math.round` behaviour.
 pub fn lab(rgb: [u8; 3]) -> [f64; 3] {
-    let xyz_vals = xyz(rgb);
+    lab_f64([f64::from(rgb[0]), f64::from(rgb[1]), f64::from(rgb[2])])
+}
+
+/// Same as [`lab`] but accepts raw float RGB channels (0–255).
+pub(crate) fn lab_f64(rgb: [f64; 3]) -> [f64; 3] {
+    let xyz_vals = xyz_f64(rgb);
     let mut x = xyz_vals[0] / 95.047;
     let mut y = xyz_vals[1] / 100.0;
     let mut z = xyz_vals[2] / 108.883;
@@ -273,7 +331,12 @@ pub fn lab(rgb: [u8; 3]) -> [f64; 3] {
 /// `hue %= 1.0` are used directly; they reproduce the JS behaviour
 /// bit-for-bit, including the sign of negative remainders.
 pub fn hcg(rgb: [u8; 3]) -> [f64; 3] {
-    let (r, g, b, min, max, chroma) = normalize_rgb(rgb);
+    hcg_f64([f64::from(rgb[0]), f64::from(rgb[1]), f64::from(rgb[2])])
+}
+
+/// Same as [`hcg`] but accepts raw float RGB channels (0–255).
+pub(crate) fn hcg_f64(rgb: [f64; 3]) -> [f64; 3] {
+    let (r, g, b, min, max, chroma) = normalize_rgb_f64(rgb);
 
     let grayscale = if chroma < 1.0 {
         min / (1.0 - chroma)
@@ -311,7 +374,12 @@ pub fn hcg(rgb: [u8; 3]) -> [f64; 3] {
 /// applies `Math.round` to the single value, so the caller (or test) is
 /// responsible for rounding to reproduce the observable JS output.
 pub fn gray(rgb: [u8; 3]) -> [f64; 1] {
-    let value = (f64::from(rgb[0]) + f64::from(rgb[1]) + f64::from(rgb[2])) / 3.0;
+    gray_f64([f64::from(rgb[0]), f64::from(rgb[1]), f64::from(rgb[2])])
+}
+
+/// Same as [`gray`] but accepts raw float RGB channels (0–255).
+pub(crate) fn gray_f64(rgb: [f64; 3]) -> [f64; 1] {
+    let value = (rgb[0] + rgb[1] + rgb[2]) / 3.0;
     [value / 255.0 * 100.0]
 }
 
@@ -359,11 +427,14 @@ pub(crate) fn ansi16_with_value(rgb: [f64; 3], value_channel: f64) -> u16 {
 ///
 /// The returned `u16` is an exact integer code; no rounding tolerance applies.
 pub fn ansi16(rgb: [u8; 3]) -> u16 {
-    let hsv_vals = hsv(rgb);
-    ansi16_with_value(
-        [f64::from(rgb[0]), f64::from(rgb[1]), f64::from(rgb[2])],
-        hsv_vals[2],
-    )
+    ansi16_f64([f64::from(rgb[0]), f64::from(rgb[1]), f64::from(rgb[2])])
+}
+
+/// Same as [`ansi16`] but accepts raw float RGB channels (0–255), used by
+/// the graph adapter for intermediate float RGB values.
+pub(crate) fn ansi16_f64(rgb: [f64; 3]) -> u16 {
+    let hsv_vals = hsv_f64(rgb);
+    ansi16_with_value(rgb, hsv_vals[2])
 }
 
 /// Converts an RGB triple to an ANSI-256 terminal colour code (16–231 for the
@@ -422,10 +493,15 @@ pub fn ansi256(rgb: [u8; 3]) -> u16 {
 /// The JS public wrapper applies `Math.round` per channel, so the caller
 /// (or test) is responsible for rounding to reproduce the observable JS output.
 pub fn apple(rgb: [u8; 3]) -> [f64; 3] {
+    apple_f64([f64::from(rgb[0]), f64::from(rgb[1]), f64::from(rgb[2])])
+}
+
+/// Same as [`apple`] but accepts raw float RGB channels (0–255).
+pub(crate) fn apple_f64(rgb: [f64; 3]) -> [f64; 3] {
     [
-        (f64::from(rgb[0]) / 255.0) * 65535.0,
-        (f64::from(rgb[1]) / 255.0) * 65535.0,
-        (f64::from(rgb[2]) / 255.0) * 65535.0,
+        (rgb[0] / 255.0) * 65535.0,
+        (rgb[1] / 255.0) * 65535.0,
+        (rgb[2] / 255.0) * 65535.0,
     ]
 }
 
@@ -488,4 +564,39 @@ pub fn keyword(rgb: [u8; 3]) -> String {
     }
 
     best_name.to_string()
+}
+
+// ---- _f64 graph-adapter variants for terminal/label encoders ----
+
+/// Graph-adapter variant of [`ansi256`]: rounds float RGB to `u8`, then delegates.
+/// Used by the `convert` module's route adapters.
+#[allow(dead_code, reason = "used by convert module (Behavior 3, issue #17)")]
+pub(crate) fn ansi256_f64(rgb: [f64; 3]) -> u16 {
+    ansi256([
+        channel_to_u8(rgb[0]),
+        channel_to_u8(rgb[1]),
+        channel_to_u8(rgb[2]),
+    ])
+}
+
+/// Same as [`hex`] but accepts raw float RGB channels (0–255).
+/// Used by the `convert` module's route adapters.
+#[allow(dead_code, reason = "used by convert module (Behavior 3, issue #17)")]
+pub(crate) fn hex_f64(rgb: [f64; 3]) -> String {
+    hex([
+        channel_to_u8(rgb[0]),
+        channel_to_u8(rgb[1]),
+        channel_to_u8(rgb[2]),
+    ])
+}
+
+/// Same as [`keyword`] but accepts raw float RGB channels (0–255).
+/// Used by the `convert` module's route adapters.
+#[allow(dead_code, reason = "used by convert module (Behavior 3, issue #17)")]
+pub(crate) fn keyword_f64(rgb: [f64; 3]) -> String {
+    keyword([
+        channel_to_u8(rgb[0]),
+        channel_to_u8(rgb[1]),
+        channel_to_u8(rgb[2]),
+    ])
 }
