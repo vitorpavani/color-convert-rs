@@ -135,3 +135,37 @@ fn rgb_to_ansi16_matches_js_vectors() {
         VecValue::Num(f64::from(n))
     });
 }
+
+// ── rgb → ansi256 ─────────────────────────────────────────────────────
+
+/// API pinned for GREEN: `rgb::ansi256(rgb: [u8; 3]) -> u16` returning an
+/// integer ANSI-256 color code (16–231 for the 6×6×6 colour cube,
+/// 232–255 for greyscale), mirroring `convert.rgb.ansi256` in
+/// color-convert's conversions.js (lines 673–699).
+///
+/// Algorithm:
+///
+/// ```text
+/// 1. Detect greyscale: if (r >> 4) == (g >> 4) == (b >> 4):
+///    a. if r < 8 → 16
+///    b. if r > 248 → 231
+///    c. else → round((r - 8) / 247 * 24) + 232
+/// 2. Otherwise (colour cube):
+///    ansi = 16 + 36 * round(r / 255 * 5)
+///              +  6 * round(g / 255 * 5)
+///              +       round(b / 255 * 5)
+/// ```
+///
+/// The ansi256 output is an integer code — comparison is exact (`==`).
+/// Tolerance is `0.0` (irrelevant for integer comparison but required
+/// by the `assert_cases` API).
+///
+/// Vector: `tests/vectors/rgb_to_ansi256.json` (32 cases; [0,0,0] → 16).
+#[test]
+fn rgb_to_ansi256_matches_js_vectors() {
+    let vectors = load_route("rgb", "ansi256");
+    assert_cases("rgb_to_ansi256", &vectors.cases, 0.0, |input| {
+        let n = rgb::ansi256(rgb_input(input));
+        VecValue::Num(f64::from(n))
+    });
+}
