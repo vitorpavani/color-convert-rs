@@ -12,3 +12,11 @@ pub fn rgb(gray: [f64; 1]) -> [f64; 3] {
     let v = (gray[0] / 100.0) * 255.0;
     [v, v, v]
 }
+
+/// Converts grayscale to HSL.
+///
+/// Mirror of `convert.gray.hsl` (lines 949–951):
+/// `return [0, 0, args[0]]`
+pub fn hsl(gray: [f64; 1]) -> [f64; 3] {
+    [0.0, 0.0, gray[0]]
+}
