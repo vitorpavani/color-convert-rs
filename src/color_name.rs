@@ -11,7 +11,7 @@
 //! * **Exact match** (same RGB) — the *last* entry in insertion order wins,
 //!   mirroring the JS `reverseKeywords` object-assignment behaviour where a
 //!   later key overwrites an earlier one.  E.g. `[128,128,128]` resolves to
-//!   `"grey"` (index 73) rather than `"gray"` (index 70).
+//!   `"grey"` (index 56) rather than `"gray"` (index 53).
 //! * **Nearest‑neighbour** (no exact match) — the *first* entry at the minimum
 //!   squared Euclidean distance wins (strict `<`), so ties are broken by
 //!   insertion order.
