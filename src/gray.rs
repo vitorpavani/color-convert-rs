@@ -52,3 +52,15 @@ pub fn cmyk(gray: [f64; 1]) -> [f64; 4] {
 pub fn lab(gray: [f64; 1]) -> [f64; 3] {
     [gray[0], 0.0, 0.0]
 }
+
+/// Converts grayscale to an uppercase 6-digit hex string.
+///
+/// Mirror of `convert.gray.hex` (lines 967–975):
+/// `value = round(gray[0]/100*255) & 0xFF;
+///  integer = (value<<16)+(value<<8)+value;
+///  return integer.toString(16).toUpperCase().padStart(6, '0')`
+pub fn hex(gray: [f64; 1]) -> String {
+    let v = ((gray[0] / 100.0) * 255.0).round() as u32 & 0xFF;
+    let integer = (v << 16) + (v << 8) + v;
+    format!("{integer:06X}")
+}
