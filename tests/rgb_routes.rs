@@ -188,3 +188,35 @@ fn rgb_to_lab_matches_js_vectors() {
         VecValue::Nums(vec![js_round(l), js_round(a), js_round(b)])
     });
 }
+
+// ── rgb → oklab ──────────────────────────────────────────────────────
+
+/// API pinned for GREEN: `rgb::oklab(rgb: [u8; 3]) -> [f64; 3]` returning
+/// RAW (unrounded) floats `[l (0-100), a, b]`, mirroring `convert.rgb.oklab`
+/// in color-convert's conversions.js (lines 200-215).
+///
+/// The JS algorithm:
+///   1. `srgbNonlinearTransformInv` each channel / 255 → linear sRGB
+///   2. sRGB linear → LMS (linear cone response) via matrix
+///   3. LMS → L'a'b' via cube-root (∛)
+///   4. L'a'b' → Lab via oklab matrix
+///   5. Return `[l * 100, a * 100, b * 100]`
+///
+/// The `a` and `b` channels **can be negative** (visible in the vectors:
+/// e.g. [0,0,128] → [27, -2, -19]), which creates a rounding-mode
+/// divergence between JS `Math.round` and Rust's `f64::round`.  As with
+/// rgb→lab, we apply `js_round` (defined above) to **every** channel in
+/// the closure to faithfully reproduce the JS public wrapper's per-channel
+/// `Math.round` behaviour.
+///
+/// Tolerance: 0.0 after per-channel `js_round` (exact match against the
+/// JS-rounded vectors in `tests/vectors/rgb_to_oklab.json`, 32 cases).
+#[test]
+fn rgb_to_oklab_matches_js_vectors() {
+    let vectors = load_route("rgb", "oklab");
+    assert_cases("rgb_to_oklab", &vectors.cases, 0.0, |input| {
+        let [l, a, b] = rgb::oklab(rgb_input(input));
+        // Apply JS-faithful rounding — a,b may be negative (see doc above).
+        VecValue::Nums(vec![js_round(l), js_round(a), js_round(b)])
+    });
+}
