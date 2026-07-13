@@ -141,23 +141,22 @@ fn main() {
     eprintln!("╚════════════════════════════════════════════════╝");
 
     // Build schema-conformant JSONL records by hand (no serde dep needed).
+    let sv = format!("{:.2}", scalar_throughput);
+    let sm = format!("{:.3}", scalar_ms);
     let scalar_json = format!(
-        r#"{{"ts":"{}","commit":"{}","issue":20,"route":"rgb->xyz","tier":"cpu","input_size":{},"metric":"throughput_mpx_s","value":{},"ms":{},"iters":{},"warmup":{},"host":"{}","gpu_present":false,"decision":"baseline","notes":"scalar rgb::xyz per-pixel baseline"}}"#,
-        ts, commit, n,
-        format!("{:.2}", scalar_throughput),
-        format!("{:.3}", scalar_ms),
-        timed_iters, warmup_iters, host
+        r#"{{"ts":"{ts}","commit":"{commit}","issue":20,"route":"rgb->xyz","tier":"cpu","input_size":{n},"metric":"throughput_mpx_s","value":{sv},"ms":{sm},"iters":{timed_iters},"warmup":{warmup_iters},"host":"{host}","gpu_present":false,"decision":"baseline","notes":"scalar rgb::xyz per-pixel baseline"}}"#
     );
 
+    let pv = format!("{:.2}", simd_throughput);
+    let pm = format!("{:.3}", simd_ms);
+    let decision = if simd_throughput > scalar_throughput {
+        "kept"
+    } else {
+        "reverted"
+    };
+    let sp = format!("{:.1}", speedup);
     let simd_json = format!(
-        r#"{{"ts":"{}","commit":"{}","issue":20,"route":"rgb->xyz","tier":"cpu","input_size":{},"metric":"throughput_mpx_s","value":{},"ms":{},"iters":{},"warmup":{},"host":"{}","gpu_present":false,"baseline_ref":"scalar {}","decision":"{}","notes":"wide::f64x4 SIMD batch, {:.1}x vs scalar"}}"#,
-        ts, commit, n,
-        format!("{:.2}", simd_throughput),
-        format!("{:.3}", simd_ms),
-        timed_iters, warmup_iters, host,
-        commit,
-        if simd_throughput > scalar_throughput { "kept" } else { "reverted" },
-        speedup
+        r#"{{"ts":"{ts}","commit":"{commit}","issue":20,"route":"rgb->xyz","tier":"cpu","input_size":{n},"metric":"throughput_mpx_s","value":{pv},"ms":{pm},"iters":{timed_iters},"warmup":{warmup_iters},"host":"{host}","gpu_present":false,"baseline_ref":"scalar {commit}","decision":"{decision}","notes":"wide::f64x4 SIMD batch, {sp}x vs scalar"}}"#
     );
 
     let manifest_dir = env!("CARGO_MANIFEST_DIR");
