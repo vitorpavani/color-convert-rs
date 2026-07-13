@@ -52,6 +52,32 @@ pub fn xyz(oklab: [f64; 3]) -> [f64; 3] {
 ///
 /// Faithful port of `convert.oklab.rgb` (color-convert@3.1.3 conversions.js,
 /// lines 564–579).
-pub fn rgb(_oklab: [f64; 3]) -> [f64; 3] {
-    [0.0, 0.0, 0.0]
+pub fn rgb(oklab: [f64; 3]) -> [f64; 3] {
+    let ll = oklab[0] / 100.0;
+    let aa = oklab[1] / 100.0;
+    let bb = oklab[2] / 100.0;
+
+    let l = (ll + 0.396_337_777_4 * aa + 0.215_803_757_3 * bb).powi(3);
+    let m = (ll - 0.105_561_345_8 * aa - 0.063_854_172_8 * bb).powi(3);
+    let s = (ll - 0.089_484_177_5 * aa - 1.291_485_548 * bb).powi(3);
+
+    let r =
+        srgb_nonlinear_transform(4.076_741_662_1 * l - 3.307_711_591_3 * m + 0.230_969_929_2 * s);
+    let g =
+        srgb_nonlinear_transform(-1.268_438_004_6 * l + 2.609_757_401_1 * m - 0.341_319_396_5 * s);
+    let b =
+        srgb_nonlinear_transform(-0.004_196_086_3 * l - 0.703_418_614_7 * m + 1.707_614_701 * s);
+
+    [r * 255.0, g * 255.0, b * 255.0]
+}
+
+/// sRGB non-linear transfer function — mirrors `srgbNonlinearTransform` in
+/// color-convert's conversions.js (lines 40–44).
+fn srgb_nonlinear_transform(c: f64) -> f64 {
+    let cc = if c > 0.003_130_8 {
+        1.055 * c.powf(1.0 / 2.4) - 0.055
+    } else {
+        c * 12.92
+    };
+    cc.clamp(0.0, 1.0)
 }
