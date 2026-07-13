@@ -34,22 +34,8 @@ pub(crate) fn normalize_rgb_f64(rgb: [f64; 3]) -> (f64, f64, f64, f64, f64, f64)
     (r, g, b, min, max, delta)
 }
 
-/// Normalize an RGB `[u8; 3]` input to per-channel `f64` fractions in `[0.0, 1.0]`,
-/// returning the three channel values along with their min, max, and delta (max-min).
-/// Retained for potential internal use; all existing routes now go through `_f64`.
-#[allow(
-    dead_code,
-    reason = "retained for u8 entry points if needed (issue #17)"
-)]
-#[inline]
-fn normalize_rgb(rgb: [u8; 3]) -> (f64, f64, f64, f64, f64, f64) {
-    normalize_rgb_f64([f64::from(rgb[0]), f64::from(rgb[1]), f64::from(rgb[2])])
-}
-
 /// Round a float RGB channel (0–255) to a `u8` for terminal/label encoders.
 /// Uses JS `Math.round` semantics: `(x + 0.5).floor().clamp(0, 255)`.
-/// Called by the `_f64` graph-adapter variants.
-#[allow(dead_code, reason = "called by _f64 graph adapters (issue #17)")]
 #[inline]
 fn channel_to_u8(x: f64) -> u8 {
     (x + 0.5).floor().clamp(0.0, 255.0) as u8
@@ -569,8 +555,6 @@ pub fn keyword(rgb: [u8; 3]) -> String {
 // ---- _f64 graph-adapter variants for terminal/label encoders ----
 
 /// Graph-adapter variant of [`ansi256`]: rounds float RGB to `u8`, then delegates.
-/// Used by the `convert` module's route adapters.
-#[allow(dead_code, reason = "used by convert module (Behavior 3, issue #17)")]
 pub(crate) fn ansi256_f64(rgb: [f64; 3]) -> u16 {
     ansi256([
         channel_to_u8(rgb[0]),
@@ -580,8 +564,6 @@ pub(crate) fn ansi256_f64(rgb: [f64; 3]) -> u16 {
 }
 
 /// Same as [`hex`] but accepts raw float RGB channels (0–255).
-/// Used by the `convert` module's route adapters.
-#[allow(dead_code, reason = "used by convert module (Behavior 3, issue #17)")]
 pub(crate) fn hex_f64(rgb: [f64; 3]) -> String {
     hex([
         channel_to_u8(rgb[0]),
