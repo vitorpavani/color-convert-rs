@@ -34,6 +34,11 @@ fn oklab_input(value: &VecValue) -> [f64; 3] {
 }
 
 // ── oklab → oklch ────────────────────────────────────────────────────────────
+//
+// API pinned for GREEN: `oklab::oklch(oklab: [f64; 3]) -> [f64; 3]` returning
+// raw floats `[l (0-100), c, h (0-360)]`. See module doc for the math.
+// Tolerance: 0.0 — all channels are non-negative, Rust's `f64::round` matches
+// JS `Math.round` semantics.
 
 #[test]
 fn oklab_to_oklch_matches_js_vectors() {
@@ -42,5 +47,22 @@ fn oklab_to_oklch_matches_js_vectors() {
         let [l, c, h] = oklab::oklch(oklab_input(input));
         // Mirror the JS public wrapper's per-channel Math.round (all values are non-negative).
         VecValue::Nums(vec![l.round(), c.round(), h.round()])
+    });
+}
+
+// ── oklab → xyz ──────────────────────────────────────────────────────────────
+//
+// API pinned for GREEN: `oklab::xyz(oklab: [f64; 3]) -> [f64; 3]` returning
+// raw floats `[x (non-neg), y (non-neg), z (non-neg)]`. See module doc for the
+// math from `convert.oklab.xyz` (conversions.js lines 548–562).
+// Tolerance: 0.0 — xyz channels are non-negative.
+
+#[test]
+fn oklab_to_xyz_matches_js_vectors() {
+    let vectors = load_route("oklab", "xyz");
+    assert_cases("oklab_to_xyz", &vectors.cases, 0.0, |input| {
+        let [x, y, z] = oklab::xyz(oklab_input(input));
+        // Mirror the JS public wrapper's per-channel Math.round (xyz channels are non-negative).
+        VecValue::Nums(vec![x.round(), y.round(), z.round()])
     });
 }

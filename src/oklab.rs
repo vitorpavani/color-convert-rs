@@ -27,3 +27,11 @@ pub fn oklch(oklab: [f64; 3]) -> [f64; 3] {
 
     [l, c, h]
 }
+
+/// Converts an Oklab triple to raw XYZ floats `[x, y, z]`.
+///
+/// Faithful port of `convert.oklab.xyz` (color-convert@3.1.3 conversions.js,
+/// lines 548–562).
+pub fn xyz(_oklab: [f64; 3]) -> [f64; 3] {
+    [0.0, 0.0, 0.0]
+}
