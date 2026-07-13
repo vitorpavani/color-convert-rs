@@ -170,3 +170,52 @@ pub fn xyz(rgb: [u8; 3]) -> [f64; 3] {
 
     [x * 100.0, y * 100.0, z * 100.0]
 }
+
+/// Piecewise CIELAB transfer function (the `f(t)` in the CIE 1976 L*a*b*
+/// specification).
+///
+/// Faithful port of the anonymous function inside `convert.rgb.lab`
+/// (color-convert@3.1.3 conversions.js, lines 288–290). For values above
+/// the threshold LAB_FT = (6/29)³, the cube root is used; below, a linear
+/// segment (7.787 * t + 16/116) provides a smooth join. In the JS
+/// reference, 16/116 = 4/29, but the expression `16 / 116` is evaluated
+/// verbatim at each call site — the same is done here.
+///
+/// This helper is reusable by future lab↔xyz conversions (issue #12).
+#[inline]
+fn lab_transfer(t: f64) -> f64 {
+    let ft = (6.0_f64 / 29.0).powi(3); // LAB_FT = (6/29)³
+    if t > ft {
+        t.cbrt()
+    } else {
+        7.787 * t + 16.0 / 116.0
+    }
+}
+
+/// Converts an RGB triple to raw CIELAB floats `[l (0-100), a, b]`.
+///
+/// Faithful port of `convert.rgb.lab` (color-convert@3.1.3 conversions.js,
+/// lines 283–302). The conversion chains through [`xyz`] and then applies
+/// the standard CIE 1976 L*a*b* formulas with D65 reference white point
+/// (Xn = 95.047, Yn = 100, Zn = 108.883).
+///
+/// The `a` and `b` channels may be negative (e.g. green and blue primaries
+/// produce strong negative a and b, respectively). The caller (or test) is
+/// responsible for per-channel rounding to reproduce the JS public
+/// wrapper's `Math.round` behaviour.
+pub fn lab(rgb: [u8; 3]) -> [f64; 3] {
+    let xyz_vals = xyz(rgb);
+    let mut x = xyz_vals[0] / 95.047;
+    let mut y = xyz_vals[1] / 100.0;
+    let mut z = xyz_vals[2] / 108.883;
+
+    x = lab_transfer(x);
+    y = lab_transfer(y);
+    z = lab_transfer(z);
+
+    let l = 116.0 * y - 16.0;
+    let a = 500.0 * (x - y);
+    let b = 200.0 * (y - z);
+
+    [l, a, b]
+}
