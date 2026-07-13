@@ -6,10 +6,15 @@
 //! self-contained and reproducible.
 //!
 //! The entries preserve `color-name`'s **insertion order**. This ordering is
-//! observable behavior: `rgb→keyword` iterates in this order and keeps the
-//! first match on a tie (strict `<` on squared Euclidean distance), so e.g.
-//! `[128,128,128]` resolves to `"gray"` (index 54) rather than `"grey"`
-//! (index 57), matching the JS `reverseKeywords` first-key-wins semantics.
+//! observable behaviour in two distinct ways:
+//!
+//! * **Exact match** (same RGB) — the *last* entry in insertion order wins,
+//!   mirroring the JS `reverseKeywords` object-assignment behaviour where a
+//!   later key overwrites an earlier one.  E.g. `[128,128,128]` resolves to
+//!   `"grey"` (index 73) rather than `"gray"` (index 70).
+//! * **Nearest‑neighbour** (no exact match) — the *first* entry at the minimum
+//!   squared Euclidean distance wins (strict `<`), so ties are broken by
+//!   insertion order.
 
 /// The 148 CSS named colors, in `color-name` insertion order, as
 /// `(name, [r, g, b])` with each channel in `0..=255`.

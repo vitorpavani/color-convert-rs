@@ -1,13 +1,24 @@
-//! Conversions FROM the `rgb` color model — all 10 direct routes
-//! (`hsl`, `hsv`, `hwb`, `cmyk`, `xyz`, `lab`, `oklab`, `hcg`,
-//! `gray`, `apple`) ported from `convert.rgb.*` in color-convert@3.1.3
-//! `conversions.js`.
+//! Conversions FROM the `rgb` colour model into other colour spaces,
+//! string encodings, and terminal codes — ported from `convert.rgb.*`
+//! in color-convert@3.1.3 `conversions.js`.
 //!
-//! Each function returns RAW (unrounded) floats — the observable
-//! per-channel rounding applied by the JS public wrapper (`Math.round`) is
-//! the caller's (or test's) responsibility.  Tolerance is 0.0 after
-//! per-channel rounding for every route; see the vector tests in
-//! `tests/rgb_routes.rs` for per-route documentation.
+//! ## Decoder routes (rgb → colour space)
+//!
+//! `hsl`, `hsv`, `hwb`, `cmyk`, `xyz`, `lab`, `oklab`, `hcg`, `gray`,
+//! `apple` — ten direct numeric routes.  Each returns **raw (unrounded)
+//! floats**.  The per-channel rounding (`Math.round`) applied by the JS
+//! public wrapper is the caller's (or test's) responsibility.  Tolerance
+//! is 0.0 after per-channel rounding for every numeric route; see the
+//! vector tests in `tests/rgb_routes.rs`.
+//!
+//! ## Encoder routes (rgb → label)
+//!
+//! `hex` (→ `String`, uppercase 6-digit hex), `keyword` (→ `String`,
+//! nearest CSS colour name), `ansi16` (→ `u16`, 30–37 / 40–47 / 90–97 /
+//! 100–107), `ansi256` (→ `u16`, 16–231 cube / 232–255 greyscale) —
+//! four routes delivering non‑numeric outputs.  String and integer
+//! comparisons are exact; no rounding tolerance applies.  Vector tests
+//! live in `tests/rgb_encoder_routes.rs`.
 
 /// Normalize an RGB `[u8; 3]` input to per-channel `f64` fractions in `[0.0, 1.0]`,
 /// returning the three channel values along with their min, max, and delta (max-min).
