@@ -18,9 +18,38 @@
 /// Converts an HCG triple to raw RGB floats `[r (0-255), g (0-255), b (0-255)]`.
 ///
 /// Faithful port of `convert.hcg.rgb` (color-convert@3.1.3 conversions.js,
-/// lines 834–884).
-pub fn rgb(_hcg: [f64; 3]) -> [f64; 3] {
-    todo!()
+/// lines 834–884). The `hi.floor() as i64` cast is safe because
+/// `hi = (h%1)*6` with `h ∈ [0, 1]`, so `hi ∈ [0, 6)`.
+pub fn rgb(hcg: [f64; 3]) -> [f64; 3] {
+    let h = hcg[0] / 360.0;
+    let c = hcg[1] / 100.0;
+    let g = hcg[2] / 100.0;
+
+    if c == 0.0 {
+        return [g * 255.0, g * 255.0, g * 255.0];
+    }
+
+    let hi = (h % 1.0) * 6.0;
+    let v = hi % 1.0;
+    let w = 1.0 - v;
+
+    let pure = match hi.floor() as i64 {
+        0 => [1.0, v, 0.0],
+        1 => [w, 1.0, 0.0],
+        2 => [0.0, 1.0, v],
+        3 => [0.0, w, 1.0],
+        4 => [v, 0.0, 1.0],
+        // JS default: case 5 → [1, 0, w]
+        _ => [1.0, 0.0, w],
+    };
+
+    let mg = (1.0 - c) * g;
+
+    [
+        (c * pure[0] + mg) * 255.0,
+        (c * pure[1] + mg) * 255.0,
+        (c * pure[2] + mg) * 255.0,
+    ]
 }
 
 /// Converts an HCG triple to raw HSV floats `[h (0-360), s (0-100), v (0-100)]`.
