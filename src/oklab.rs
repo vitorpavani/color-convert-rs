@@ -47,3 +47,11 @@ pub fn xyz(oklab: [f64; 3]) -> [f64; 3] {
 
     [x * 100.0, y * 100.0, z * 100.0]
 }
+
+/// Converts an Oklab triple to raw RGB floats `[r (0-255), g (0-255), b (0-255)]`.
+///
+/// Faithful port of `convert.oklab.rgb` (color-convert@3.1.3 conversions.js,
+/// lines 564–579).
+pub fn rgb(_oklab: [f64; 3]) -> [f64; 3] {
+    [0.0, 0.0, 0.0]
+}

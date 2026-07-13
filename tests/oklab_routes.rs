@@ -66,3 +66,20 @@ fn oklab_to_xyz_matches_js_vectors() {
         VecValue::Nums(vec![x.round(), y.round(), z.round()])
     });
 }
+
+// ── oklab → rgb ──────────────────────────────────────────────────────────────
+//
+// API pinned for GREEN: `oklab::rgb(oklab: [f64; 3]) -> [f64; 3]` returning
+// raw floats `[r (0-255), g (0-255), b (0-255)]`. See module doc for the math
+// from `convert.oklab.rgb` (conversions.js lines 564–579).
+// Tolerance: 0.0 — rgb channels are non-negative.
+
+#[test]
+fn oklab_to_rgb_matches_js_vectors() {
+    let vectors = load_route("oklab", "rgb");
+    assert_cases("oklab_to_rgb", &vectors.cases, 0.0, |input| {
+        let [r, g, b] = oklab::rgb(oklab_input(input));
+        // Mirror the JS public wrapper's per-channel Math.round (rgb channels are non-negative).
+        VecValue::Nums(vec![r.round(), g.round(), b.round()])
+    });
+}
