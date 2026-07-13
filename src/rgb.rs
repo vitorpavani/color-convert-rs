@@ -250,3 +250,35 @@ pub fn lab(rgb: [u8; 3]) -> [f64; 3] {
 
     [l, a, b]
 }
+
+/// Converts an RGB triple to raw HCG floats `[h (0-360), c (0-100), g (0-100)]`.
+///
+/// Faithful port of `convert.rgb.hcg` (color-convert@3.1.3 conversions.js,
+/// lines 779–803). The JS `%` operator is the IEEE 754 remainder — the same
+/// semantics as Rust's `%` on `f64` — so `((g - b) / chroma) % 6.0` and
+/// `hue %= 1.0` are used directly; they reproduce the JS behaviour
+/// bit-for-bit, including the sign of negative remainders.
+pub fn hcg(rgb: [u8; 3]) -> [f64; 3] {
+    let (r, g, b, min, max, chroma) = normalize_rgb(rgb);
+
+    let grayscale = if chroma < 1.0 {
+        min / (1.0 - chroma)
+    } else {
+        0.0
+    };
+
+    let mut hue = if chroma <= 0.0 {
+        0.0
+    } else if max == r {
+        ((g - b) / chroma) % 6.0
+    } else if max == g {
+        2.0 + (b - r) / chroma
+    } else {
+        4.0 + (r - g) / chroma
+    };
+
+    hue /= 6.0;
+    hue %= 1.0;
+
+    [hue * 360.0, chroma * 100.0, grayscale * 100.0]
+}
