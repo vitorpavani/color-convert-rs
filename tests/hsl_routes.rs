@@ -66,3 +66,27 @@ fn hsl_to_hsv_matches_js_vectors() {
         VecValue::Nums(vec![h.round(), s.round(), v.round()])
     });
 }
+
+// ── hsl → hcg ───────────────────────────────────────────────────────────────
+
+/// HSL→HCG conversion, pinning API `hsl::hcg(hsl: [f64; 3]) -> [f64; 3]`.
+///
+/// Returns raw (unrounded) floats `[h (0-360), c (0-100), g (0-100)]`. The
+/// JS public wrapper applies per-channel `Math.round`, so the test rounds here.
+/// HCG channels are non-negative, therefore Rust's `f64::round` (half away from
+/// zero) and JS `Math.round` (half toward +∞) coincide — tolerance 0.0 after
+/// rounding.
+///
+/// Reference: `convert.hsl.hcg` (color-convert@3.1.3, conversions.js 806–818):
+///   s = hsl[1]/100; l = hsl[2]/100;
+///   c = l < 0.5 ? 2*s*l : 2*s*(1-l);
+///   f = 0; if c < 1 { f = (l - 0.5*c) / (1-c) };
+///   return [hsl[0], c*100, f*100];
+#[test]
+fn hsl_to_hcg_matches_js_vectors() {
+    let vectors = load_route("hsl", "hcg");
+    assert_cases("hsl_to_hcg", &vectors.cases, 0.0, |input| {
+        let [h, c, g] = hsl::hcg(hsl_input(input));
+        VecValue::Nums(vec![h.round(), c.round(), g.round()])
+    });
+}
