@@ -40,16 +40,10 @@ pub fn rgb(hex: &str) -> [f64; 3] {
     let mut i = 0;
     while i + 5 < len {
         if (0..6).all(|j| bytes[i + j].is_ascii_hexdigit()) {
-            // SAFETY: we just verified every byte in [i..i+6) is ASCII hex.
-            let s = unsafe { std::str::from_utf8_unchecked(&bytes[i..i + 6]) };
-            return match u32::from_str_radix(s, 16) {
-                Ok(val) => [
-                    ((val >> 16) & 0xFF) as f64,
-                    ((val >> 8) & 0xFF) as f64,
-                    (val & 0xFF) as f64,
-                ],
-                Err(_) => [0.0, 0.0, 0.0],
-            };
+            let r = (hex_digit_val(bytes[i]) << 4) | hex_digit_val(bytes[i + 1]);
+            let g = (hex_digit_val(bytes[i + 2]) << 4) | hex_digit_val(bytes[i + 3]);
+            let b = (hex_digit_val(bytes[i + 4]) << 4) | hex_digit_val(bytes[i + 5]);
+            return [f64::from(r), f64::from(g), f64::from(b)];
         }
         i += 1;
     }
