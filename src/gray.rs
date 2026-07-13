@@ -20,3 +20,11 @@ pub fn rgb(gray: [f64; 1]) -> [f64; 3] {
 pub fn hsl(gray: [f64; 1]) -> [f64; 3] {
     [0.0, 0.0, gray[0]]
 }
+
+/// Converts grayscale to HSV.
+///
+/// Mirror of `convert.gray.hsv` — aliased to `gray.hsl` in the JS reference:
+/// `return [0, 0, args[0]]`
+pub fn hsv(gray: [f64; 1]) -> [f64; 3] {
+    [0.0, 0.0, gray[0]]
+}
