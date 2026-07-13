@@ -8,6 +8,7 @@ pub mod ansi256;
 pub mod apple;
 pub mod cmyk;
 mod color_name;
+pub mod convert;
 mod error;
 pub mod gray;
 pub mod hcg;
@@ -23,4 +24,5 @@ pub mod oklch;
 pub mod rgb;
 pub mod xyz;
 
+pub use convert::{Color, Model, convert, convert_rounded};
 pub use error::Error;

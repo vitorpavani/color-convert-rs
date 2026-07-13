@@ -61,12 +61,22 @@ pub fn rgb(oklab: [f64; 3]) -> [f64; 3] {
     let m = (ll - 0.105_561_345_8 * aa - 0.063_854_172_8 * bb).powi(3);
     let s = (ll - 0.089_484_177_5 * aa - 1.291_485_548 * bb).powi(3);
 
-    let r =
-        srgb_nonlinear_transform(4.076_741_662_1 * l - 3.307_711_591_3 * m + 0.230_969_929_2 * s);
-    let g =
-        srgb_nonlinear_transform(-1.268_438_004_6 * l + 2.609_757_401_1 * m - 0.341_319_396_5 * s);
-    let b =
-        srgb_nonlinear_transform(-0.004_196_086_3 * l - 0.703_418_614_7 * m + 1.707_614_701 * s);
+    // Force left-to-right evaluation matching JS operator precedence
+    // (a*l - b*m + c*s) to reproduce identical floating-point rounding.
+    let rl = 4.076_741_662_1 * l;
+    let rm = rl - 3.307_711_591_3 * m;
+    let ri = rm + 0.230_969_929_2 * s;
+    let r = srgb_nonlinear_transform(ri);
+
+    let gl = -1.268_438_004_6 * l;
+    let gm = gl + 2.609_757_401_1 * m;
+    let gi = gm - 0.341_319_396_5 * s;
+    let g = srgb_nonlinear_transform(gi);
+
+    let bl = -0.004_196_086_3 * l;
+    let bm = bl - 0.703_418_614_7 * m;
+    let bi = bm + 1.707_614_701 * s;
+    let b = srgb_nonlinear_transform(bi);
 
     [r * 255.0, g * 255.0, b * 255.0]
 }

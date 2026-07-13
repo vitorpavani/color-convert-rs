@@ -1,0 +1,88 @@
+{
+  "from": "cmyk",
+  "to": "keyword",
+  "source": "color-convert@3.1.3 (multi-hop)",
+  "cases": [
+    {
+      "input": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "expected": "white"
+    },
+    {
+      "input": [
+        0,
+        0,
+        0,
+        25
+      ],
+      "expected": "silver"
+    },
+    {
+      "input": [
+        0,
+        0,
+        0,
+        50
+      ],
+      "expected": "gray"
+    },
+    {
+      "input": [
+        0,
+        0,
+        0,
+        75
+      ],
+      "expected": "darkslategray"
+    },
+    {
+      "input": [
+        0,
+        0,
+        0,
+        100
+      ],
+      "expected": "black"
+    },
+    {
+      "input": [
+        0,
+        0,
+        100,
+        0
+      ],
+      "expected": "yellow"
+    },
+    {
+      "input": [
+        0,
+        100,
+        0,
+        0
+      ],
+      "expected": "magenta"
+    },
+    {
+      "input": [
+        30,
+        0,
+        50,
+        22
+      ],
+      "expected": "darkseagreen"
+    },
+    {
+      "input": [
+        100,
+        0,
+        0,
+        0
+      ],
+      "expected": "cyan"
+    }
+  ]
+}
