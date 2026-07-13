@@ -21,9 +21,11 @@ pub mod lab;
 pub mod lch;
 pub mod oklab;
 pub mod oklch;
+pub mod probe;
 pub mod rgb;
 pub mod simd;
 pub mod xyz;
 
 pub use convert::{Color, Model, convert, convert_rounded};
 pub use error::Error;
+pub use probe::{Backend, gpu_present, probe};
