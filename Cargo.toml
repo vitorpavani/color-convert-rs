@@ -6,6 +6,9 @@ edition = "2024"
 [lib]
 name = "color_convert_rs"
 
+[[bin]]
+name = "bench"
+
 [dependencies]
 # Derive-based library error enum: library code returns Result<_, Error> with
 # no unwrap()/expect() in lib paths (Rule 9: issue #4).
