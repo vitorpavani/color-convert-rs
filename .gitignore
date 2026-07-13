@@ -15,4 +15,4 @@ benchmarks/js/node_modules/
 # Benchmark scratch (raw outputs kept out; the committed ledger lives in benchmarks/results.jsonl)
 benchmarks/tmp/
 
-.omo
+.omolibnull.rlib

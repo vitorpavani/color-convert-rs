@@ -56,7 +56,7 @@ const M10: f32 = 0.2126729;
 const M11: f32 = 0.7151522;
 const M12: f32 = 0.0721750;
 const M20: f32 = 0.0193339;
-const M21: f32 = 0.1191920;
+const M21: f32 = 0.119_192;
 const M22: f32 = 0.9503041;
 
 // ── D65 reference white point (CIE XYZ tristimulus) ────────────────────
@@ -201,10 +201,8 @@ pub fn rgb_to_lab_gpu_batch(rgb: &[[u8; 3]]) -> Option<Vec<[f32; 3]>> {
 
     // catch_unwind: WgpuRuntime::client() panics when no adapter is found
     // (CubeCL 0.10 does not gracefully degrade).  On panic, return None.
-    let client = std::panic::catch_unwind(|| {
-        WgpuRuntime::client(&WgpuDevice::DefaultDevice)
-    })
-    .ok()?;
+    let client =
+        std::panic::catch_unwind(|| WgpuRuntime::client(&WgpuDevice::DefaultDevice)).ok()?;
 
     // ── Upload: flat f32 buffer ─────────────────────────────────────
     let n_float = n * 3;
@@ -221,10 +219,8 @@ pub fn rgb_to_lab_gpu_batch(rgb: &[[u8; 3]]) -> Option<Vec<[f32; 3]>> {
 
     // ── Launch configuration ────────────────────────────────────────
     let cube_dim = CubeDim::new_1d(64);
-    let n_u32: u32 = n.try_into().expect("n fits in u32 for cube count");
-    let cube_count = CubeCount::new_1d(
-        n_u32.div_ceil(cube_dim.x),
-    );
+    let n_u32: u32 = u32::try_from(n).unwrap_or(u32::MAX);
+    let cube_count = CubeCount::new_1d(n_u32.div_ceil(cube_dim.x));
 
     // SAFETY: The kernel launch is unsafe per the CubeCL API because the
     // runtime cannot statically verify that the ArrayArg handles match the

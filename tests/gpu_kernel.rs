@@ -28,11 +28,14 @@ fn gpu_kernel_does_not_panic_on_gpu_less_host() {
         None => {
             // No GPU was available — expected on this host.
             // The function returned cleanly without panicking. Green-by-skip.
-            assert!(true, "GPU unavailable — graceful skip verified");
         }
         Some(lab_vec) => {
             // A GPU was present — kernel ran successfully.
-            assert_eq!(lab_vec.len(), input.len(), "output must have one LAB per input RGB");
+            assert_eq!(
+                lab_vec.len(),
+                input.len(),
+                "output must have one LAB per input RGB"
+            );
             // TODO(#22): add correctness assertion against reference vectors
             // once the tolerance gate behavior is tested.
         }
@@ -60,9 +63,9 @@ fn gpu_kernel_matches_cpu_lab_within_tolerance() {
     // Test vectors: pure red, green, blue, white, black.
     // Expected LAB values from the scalar CPU path (f64).
     let test_vectors: Vec<[u8; 3]> = vec![
-        [255, 0, 0],   // pure red   → approx LAB [53, 80, 67]
-        [0, 255, 0],   // pure green → approx LAB [88, -86, 83]
-        [0, 0, 255],   // pure blue  → approx LAB [32, 79, -108]
+        [255, 0, 0],     // pure red   → approx LAB [53, 80, 67]
+        [0, 255, 0],     // pure green → approx LAB [88, -86, 83]
+        [0, 0, 255],     // pure blue  → approx LAB [32, 79, -108]
         [255, 255, 255], // white     → approx LAB [100, 0, 0]
         [0, 0, 0],       // black     → approx LAB [0, 0, 0]
     ];
@@ -80,35 +83,39 @@ fn gpu_kernel_matches_cpu_lab_within_tolerance() {
             // When a GPU IS present, this branch is never taken and
             // the Some branch below validates pixel-for-pixel
             // correctness against the CPU reference.
-            assert!(true, "GPU unavailable — correctness gate skipped structurally");
         }
         Some(gpu_lab) => {
-            assert_eq!(gpu_lab.len(), test_vectors.len(),
-                "output length must match input length");
+            assert_eq!(
+                gpu_lab.len(),
+                test_vectors.len(),
+                "output length must match input length"
+            );
 
             for (i, lab_gpu) in gpu_lab.iter().enumerate() {
                 let cpu_ref = color_convert_rs::rgb::lab(test_vectors[i]);
-                let cpu_lab: [f32; 3] = [
-                    cpu_ref[0] as f32,
-                    cpu_ref[1] as f32,
-                    cpu_ref[2] as f32,
-                ];
+                let cpu_lab: [f32; 3] = [cpu_ref[0] as f32, cpu_ref[1] as f32, cpu_ref[2] as f32];
 
                 let tol: f32 = 0.5;
                 assert!(
                     (lab_gpu[0] - cpu_lab[0]).abs() <= tol,
                     "pixel {i} L channel: gpu={}, cpu={}, diff={} > tol={tol}",
-                    lab_gpu[0], cpu_lab[0], (lab_gpu[0] - cpu_lab[0]).abs()
+                    lab_gpu[0],
+                    cpu_lab[0],
+                    (lab_gpu[0] - cpu_lab[0]).abs()
                 );
                 assert!(
                     (lab_gpu[1] - cpu_lab[1]).abs() <= tol,
                     "pixel {i} a channel: gpu={}, cpu={}, diff={} > tol={tol}",
-                    lab_gpu[1], cpu_lab[1], (lab_gpu[1] - cpu_lab[1]).abs()
+                    lab_gpu[1],
+                    cpu_lab[1],
+                    (lab_gpu[1] - cpu_lab[1]).abs()
                 );
                 assert!(
                     (lab_gpu[2] - cpu_lab[2]).abs() <= tol,
                     "pixel {i} b channel: gpu={}, cpu={}, diff={} > tol={tol}",
-                    lab_gpu[2], cpu_lab[2], (lab_gpu[2] - cpu_lab[2]).abs()
+                    lab_gpu[2],
+                    cpu_lab[2],
+                    (lab_gpu[2] - cpu_lab[2]).abs()
                 );
             }
         }
