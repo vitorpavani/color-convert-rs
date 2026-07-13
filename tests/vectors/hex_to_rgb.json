@@ -1,0 +1,39 @@
+{
+  "from": "hex",
+  "to": "rgb",
+  "source": "color-convert@3.1.3",
+  "cases": [
+    {
+      "input": "000000",
+      "expected": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "input": "8CC864",
+      "expected": [
+        140,
+        200,
+        100
+      ]
+    },
+    {
+      "input": "ABC",
+      "expected": [
+        170,
+        187,
+        204
+      ]
+    },
+    {
+      "input": "FFFFFF",
+      "expected": [
+        255,
+        255,
+        255
+      ]
+    }
+  ]
+}

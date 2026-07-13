@@ -1,0 +1,62 @@
+{
+  "from": "gray",
+  "to": "cmyk",
+  "source": "color-convert@3.1.3",
+  "cases": [
+    {
+      "input": [
+        0
+      ],
+      "expected": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "input": [
+        25
+      ],
+      "expected": [
+        0,
+        0,
+        0,
+        25
+      ]
+    },
+    {
+      "input": [
+        50
+      ],
+      "expected": [
+        0,
+        0,
+        0,
+        50
+      ]
+    },
+    {
+      "input": [
+        75
+      ],
+      "expected": [
+        0,
+        0,
+        0,
+        75
+      ]
+    },
+    {
+      "input": [
+        100
+      ],
+      "expected": [
+        0,
+        0,
+        0,
+        100
+      ]
+    }
+  ]
+}
