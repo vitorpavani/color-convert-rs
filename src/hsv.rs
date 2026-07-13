@@ -41,3 +41,27 @@ pub fn rgb(hsv: [f64; 3]) -> [f64; 3] {
         _ => [v, t, p],
     }
 }
+
+/// Converts an HSV triple to raw HSL floats `[h (0-360), s (0-100), l (0-100)]`.
+///
+/// Faithful port of `convert.hsv.hsl` (color-convert@3.1.3 conversions.js,
+/// lines 402–419). The JS expression `sl = sl || 0` guards NaN (and the falsy
+/// zero) — mirrored here with `sl.is_finite()` to catch both NaN and ±infinity.
+pub fn hsl(hsv: [f64; 3]) -> [f64; 3] {
+    let h = hsv[0];
+    let s = hsv[1] / 100.0;
+    let v = hsv[2] / 100.0;
+
+    let vmin = v.max(0.01);
+    let l = (2.0 - s) * v;
+    let lmin = (2.0 - s) * vmin;
+
+    let mut sl = s * vmin;
+    sl /= if lmin <= 1.0 { lmin } else { 2.0 - lmin };
+    // Mirror JS `sl = sl || 0` — catches NaN, and also ±inf for safety.
+    let sl = if sl.is_finite() { sl } else { 0.0 };
+
+    let l = l / 2.0;
+
+    [h, sl * 100.0, l * 100.0]
+}
