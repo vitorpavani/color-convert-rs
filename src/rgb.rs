@@ -106,3 +106,31 @@ pub fn hwb(rgb: [u8; 3]) -> [f64; 3] {
     let h = hsl(rgb)[0];
     [h, min * 100.0, (1.0 - max) * 100.0]
 }
+
+/// Converts an RGB triple to raw CMYK floats `[c (0-100), m (0-100), y (0-100), k (0-100)]`.
+///
+/// Faithful port of `convert.rgb.cmyk` (color-convert@3.1.3 conversions.js,
+/// lines 217-228). The divide-by-zero guard when `k == 1` (pure black) mirrors
+/// the JS `|| 0` fallback: the expression `(1-r-k)/(1-k) || 0` evaluates the
+/// division result, and if falsy (0 or NaN) falls through to 0.
+pub fn cmyk(rgb: [u8; 3]) -> [f64; 4] {
+    let r = f64::from(rgb[0]) / 255.0;
+    let g = f64::from(rgb[1]) / 255.0;
+    let b = f64::from(rgb[2]) / 255.0;
+
+    let k = (1.0 - r).min(1.0 - g).min(1.0 - b);
+    let denom = 1.0 - k;
+
+    let (c, m, y) = if denom == 0.0 {
+        // k == 1 (pure black) — guard division by zero, mirroring JS `|| 0`
+        (0.0, 0.0, 0.0)
+    } else {
+        (
+            (1.0 - r - k) / denom,
+            (1.0 - g - k) / denom,
+            (1.0 - b - k) / denom,
+        )
+    };
+
+    [c * 100.0, m * 100.0, y * 100.0, k * 100.0]
+}
