@@ -24,7 +24,22 @@
 ///   floor‑divided channel indices on the `code-16` value.
 /// - Codes 0–15 produce mathematically correct but visually‑meaningless
 ///   **negative** RGB values (faithful to the JS reference).
-pub fn rgb(_code: u16) -> [f64; 3] {
-    // STUB — returns a clearly wrong value so RED tests fail on assertion.
-    [42.0, 42.0, 42.0]
+pub fn rgb(code: u16) -> [f64; 3] {
+    let args = i64::from(code);
+
+    // greyscale ramp (codes 232–255)
+    if args >= 232 {
+        let c = ((args - 232) * 10 + 8) as f64;
+        return [c, c, c];
+    }
+
+    // colour cube (codes 16–231) and system colours (0–15, producing negatives).
+    // f64::floor mirrors JS Math.floor — needed for negative values
+    // (Rust integer division truncates toward zero, not toward −∞).
+    let v = args as f64 - 16.0;
+    let r = (v / 36.0).floor() / 5.0 * 255.0;
+    let rem = v % 36.0; // f64 remainder preserves dividend sign (matches JS %)
+    let g = (rem / 6.0).floor() / 5.0 * 255.0;
+    let b = (rem % 6.0) / 5.0 * 255.0;
+    [r, g, b]
 }
