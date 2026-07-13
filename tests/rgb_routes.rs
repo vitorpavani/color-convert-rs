@@ -90,3 +90,27 @@ fn rgb_to_hwb_matches_js_vectors() {
         VecValue::Nums(vec![h.round(), w.round(), b.round()])
     });
 }
+
+/// API pinned for GREEN: `rgb::cmyk(rgb: [u8; 3]) -> [f64; 4]` returning RAW
+/// (unrounded) floats `[c (0-100), m (0-100), y (0-100), k (0-100)]`, mirroring
+/// `convert.rgb.cmyk` in color-convert's conversions.js (lines 217-228).
+///
+/// The JS algorithm normalizes r,g,b to /255 fractions, computes
+/// k = min(1-r, 1-g, 1-b), then c = (1-r-k)/(1-k)||0 (similarly for m,y),
+/// and returns [c*100, m*100, y*100, k*100]. The `||0` guards the k==1
+/// (pure black) boundary where division by zero would produce NaN.
+///
+/// NOTE: Unlike hsl/hsv/hwb which return 3-channel `[f64; 3]`, cmyk returns
+/// 4-channel `[f64; 4]`. All channels are non-negative, so Rust's half-away-
+/// from-zero `f64::round` coincides with JS `Math.round` on this route.
+///
+/// Tolerance: 0.0 after per-channel rounding (exact match against rounded JS vectors).
+#[test]
+fn rgb_to_cmyk_matches_js_vectors() {
+    let vectors = load_route("rgb", "cmyk");
+    assert_cases("rgb_to_cmyk", &vectors.cases, 0.0, |input| {
+        let [c, m, y, k] = rgb::cmyk(rgb_input(input));
+        // Mirror the JS public wrapper's per-channel Math.round (see module doc).
+        VecValue::Nums(vec![c.round(), m.round(), y.round(), k.round()])
+    });
+}
