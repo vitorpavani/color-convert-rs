@@ -8,10 +8,16 @@ pub mod ansi256;
 pub mod cmyk;
 mod color_name;
 mod error;
+pub mod hcg;
 pub mod hex;
 pub mod hsl;
 pub mod hsv;
 pub mod hwb;
+pub mod lab;
+pub mod lch;
+pub mod oklab;
+pub mod oklch;
 pub mod rgb;
+pub mod xyz;
 
 pub use error::Error;
