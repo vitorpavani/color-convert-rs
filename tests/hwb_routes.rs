@@ -48,3 +48,25 @@ fn hwb_to_rgb_matches_js_vectors() {
         VecValue::Nums(vec![r.round(), g.round(), b.round()])
     });
 }
+
+// ── hwb → hcg ───────────────────────────────────────────────────────────────
+//
+// API pinned for GREEN: `hwb::hcg(hwb: [f64; 3]) -> [f64; 3]` returning raw
+// floats `[h (0-360), c (0-100), g (0-100)]`, mirroring `convert.hwb.hcg`
+// in color-convert's conversions.js (lines 923-935).
+// The JS reference computes:
+//   w = hwb[1] / 100; b = hwb[2] / 100; v = 1 - b; c = v - w;
+//   g = 0; if c < 1 { g = (v - c) / (1 - c) }
+//   return [hwb[0], c * 100, g * 100]
+// Tolerance: 0.0. After per-channel rounding the output must match the
+// rounded JS vector EXACTLY (same rounding-mode note as hwb→rgb applies).
+
+#[test]
+fn hwb_to_hcg_matches_js_vectors() {
+    let vectors = load_route("hwb", "hcg");
+    assert_cases("hwb_to_hcg", &vectors.cases, 0.0, |input| {
+        let [h, c, g] = hwb::hcg(hwb_input(input));
+        // Mirror the JS public wrapper's per-channel Math.round.
+        VecValue::Nums(vec![h.round(), c.round(), g.round()])
+    });
+}
