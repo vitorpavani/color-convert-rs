@@ -1,0 +1,511 @@
+{
+  "from": "hsv",
+  "to": "ansi16",
+  "source": "color-convert@3.1.3",
+  "cases": [
+    {
+      "input": [
+        0,
+        0,
+        0
+      ],
+      "expected": 30
+    },
+    {
+      "input": [
+        0,
+        0,
+        50
+      ],
+      "expected": 37
+    },
+    {
+      "input": [
+        0,
+        0,
+        100
+      ],
+      "expected": 97
+    },
+    {
+      "input": [
+        0,
+        50,
+        0
+      ],
+      "expected": 30
+    },
+    {
+      "input": [
+        0,
+        50,
+        50
+      ],
+      "expected": 31
+    },
+    {
+      "input": [
+        0,
+        50,
+        100
+      ],
+      "expected": 97
+    },
+    {
+      "input": [
+        0,
+        100,
+        0
+      ],
+      "expected": 30
+    },
+    {
+      "input": [
+        0,
+        100,
+        50
+      ],
+      "expected": 31
+    },
+    {
+      "input": [
+        0,
+        100,
+        100
+      ],
+      "expected": 91
+    },
+    {
+      "input": [
+        60,
+        0,
+        0
+      ],
+      "expected": 30
+    },
+    {
+      "input": [
+        60,
+        0,
+        50
+      ],
+      "expected": 37
+    },
+    {
+      "input": [
+        60,
+        0,
+        100
+      ],
+      "expected": 97
+    },
+    {
+      "input": [
+        60,
+        50,
+        0
+      ],
+      "expected": 30
+    },
+    {
+      "input": [
+        60,
+        50,
+        50
+      ],
+      "expected": 33
+    },
+    {
+      "input": [
+        60,
+        50,
+        100
+      ],
+      "expected": 97
+    },
+    {
+      "input": [
+        60,
+        100,
+        0
+      ],
+      "expected": 30
+    },
+    {
+      "input": [
+        60,
+        100,
+        50
+      ],
+      "expected": 33
+    },
+    {
+      "input": [
+        60,
+        100,
+        100
+      ],
+      "expected": 93
+    },
+    {
+      "input": [
+        120,
+        0,
+        0
+      ],
+      "expected": 30
+    },
+    {
+      "input": [
+        120,
+        0,
+        50
+      ],
+      "expected": 37
+    },
+    {
+      "input": [
+        120,
+        0,
+        100
+      ],
+      "expected": 97
+    },
+    {
+      "input": [
+        120,
+        50,
+        0
+      ],
+      "expected": 30
+    },
+    {
+      "input": [
+        120,
+        50,
+        50
+      ],
+      "expected": 32
+    },
+    {
+      "input": [
+        120,
+        50,
+        100
+      ],
+      "expected": 97
+    },
+    {
+      "input": [
+        120,
+        100,
+        0
+      ],
+      "expected": 30
+    },
+    {
+      "input": [
+        120,
+        100,
+        50
+      ],
+      "expected": 32
+    },
+    {
+      "input": [
+        120,
+        100,
+        100
+      ],
+      "expected": 92
+    },
+    {
+      "input": [
+        180,
+        0,
+        0
+      ],
+      "expected": 30
+    },
+    {
+      "input": [
+        180,
+        0,
+        50
+      ],
+      "expected": 37
+    },
+    {
+      "input": [
+        180,
+        0,
+        100
+      ],
+      "expected": 97
+    },
+    {
+      "input": [
+        180,
+        50,
+        0
+      ],
+      "expected": 30
+    },
+    {
+      "input": [
+        180,
+        50,
+        50
+      ],
+      "expected": 36
+    },
+    {
+      "input": [
+        180,
+        50,
+        100
+      ],
+      "expected": 97
+    },
+    {
+      "input": [
+        180,
+        100,
+        0
+      ],
+      "expected": 30
+    },
+    {
+      "input": [
+        180,
+        100,
+        50
+      ],
+      "expected": 36
+    },
+    {
+      "input": [
+        180,
+        100,
+        100
+      ],
+      "expected": 96
+    },
+    {
+      "input": [
+        240,
+        0,
+        0
+      ],
+      "expected": 30
+    },
+    {
+      "input": [
+        240,
+        0,
+        50
+      ],
+      "expected": 37
+    },
+    {
+      "input": [
+        240,
+        0,
+        100
+      ],
+      "expected": 97
+    },
+    {
+      "input": [
+        240,
+        50,
+        0
+      ],
+      "expected": 30
+    },
+    {
+      "input": [
+        240,
+        50,
+        50
+      ],
+      "expected": 34
+    },
+    {
+      "input": [
+        240,
+        50,
+        100
+      ],
+      "expected": 97
+    },
+    {
+      "input": [
+        240,
+        100,
+        0
+      ],
+      "expected": 30
+    },
+    {
+      "input": [
+        240,
+        100,
+        50
+      ],
+      "expected": 34
+    },
+    {
+      "input": [
+        240,
+        100,
+        100
+      ],
+      "expected": 94
+    },
+    {
+      "input": [
+        300,
+        0,
+        0
+      ],
+      "expected": 30
+    },
+    {
+      "input": [
+        300,
+        0,
+        50
+      ],
+      "expected": 37
+    },
+    {
+      "input": [
+        300,
+        0,
+        100
+      ],
+      "expected": 97
+    },
+    {
+      "input": [
+        300,
+        50,
+        0
+      ],
+      "expected": 30
+    },
+    {
+      "input": [
+        300,
+        50,
+        50
+      ],
+      "expected": 35
+    },
+    {
+      "input": [
+        300,
+        50,
+        100
+      ],
+      "expected": 97
+    },
+    {
+      "input": [
+        300,
+        100,
+        0
+      ],
+      "expected": 30
+    },
+    {
+      "input": [
+        300,
+        100,
+        50
+      ],
+      "expected": 35
+    },
+    {
+      "input": [
+        300,
+        100,
+        100
+      ],
+      "expected": 95
+    },
+    {
+      "input": [
+        360,
+        0,
+        0
+      ],
+      "expected": 30
+    },
+    {
+      "input": [
+        360,
+        0,
+        50
+      ],
+      "expected": 37
+    },
+    {
+      "input": [
+        360,
+        0,
+        100
+      ],
+      "expected": 97
+    },
+    {
+      "input": [
+        360,
+        50,
+        0
+      ],
+      "expected": 30
+    },
+    {
+      "input": [
+        360,
+        50,
+        50
+      ],
+      "expected": 31
+    },
+    {
+      "input": [
+        360,
+        50,
+        100
+      ],
+      "expected": 97
+    },
+    {
+      "input": [
+        360,
+        100,
+        0
+      ],
+      "expected": 30
+    },
+    {
+      "input": [
+        360,
+        100,
+        50
+      ],
+      "expected": 31
+    },
+    {
+      "input": [
+        360,
+        100,
+        100
+      ],
+      "expected": 91
+    }
+  ]
+}

@@ -1,0 +1,127 @@
+{
+  "from": "keyword",
+  "to": "rgb",
+  "source": "color-convert@3.1.3",
+  "cases": [
+    {
+      "input": "black",
+      "expected": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "input": "blue",
+      "expected": [
+        0,
+        0,
+        255
+      ]
+    },
+    {
+      "input": "cyan",
+      "expected": [
+        0,
+        255,
+        255
+      ]
+    },
+    {
+      "input": "gray",
+      "expected": [
+        128,
+        128,
+        128
+      ]
+    },
+    {
+      "input": "green",
+      "expected": [
+        0,
+        128,
+        0
+      ]
+    },
+    {
+      "input": "grey",
+      "expected": [
+        128,
+        128,
+        128
+      ]
+    },
+    {
+      "input": "magenta",
+      "expected": [
+        255,
+        0,
+        255
+      ]
+    },
+    {
+      "input": "navy",
+      "expected": [
+        0,
+        0,
+        128
+      ]
+    },
+    {
+      "input": "olive",
+      "expected": [
+        128,
+        128,
+        0
+      ]
+    },
+    {
+      "input": "purple",
+      "expected": [
+        128,
+        0,
+        128
+      ]
+    },
+    {
+      "input": "rebeccapurple",
+      "expected": [
+        102,
+        51,
+        153
+      ]
+    },
+    {
+      "input": "red",
+      "expected": [
+        255,
+        0,
+        0
+      ]
+    },
+    {
+      "input": "teal",
+      "expected": [
+        0,
+        128,
+        128
+      ]
+    },
+    {
+      "input": "white",
+      "expected": [
+        255,
+        255,
+        255
+      ]
+    },
+    {
+      "input": "yellow",
+      "expected": [
+        255,
+        255,
+        0
+      ]
+    }
+  ]
+}
