@@ -300,3 +300,24 @@ pub fn gray(rgb: [u8; 3]) -> [f64; 1] {
     let value = (f64::from(rgb[0]) + f64::from(rgb[1]) + f64::from(rgb[2])) / 3.0;
     [value / 255.0 * 100.0]
 }
+
+/// Converts an RGB triple to raw Apple 16-bit RGB floats
+/// `[r16 (0-65535), g16 (0-65535), b16 (0-65535)]`.
+///
+/// Faithful port of `convert.rgb.apple` (color-convert@3.1.3 conversions.js,
+/// lines 941-943). Each 0-255 channel is linearly mapped to the 0-65535 range
+/// of Apple's 16‑bit RGB colour-picker representation:
+///
+/// ```text
+/// return [(r/255)*65535, (g/255)*65535, (b/255)*65535]
+/// ```
+///
+/// The JS public wrapper applies `Math.round` per channel, so the caller
+/// (or test) is responsible for rounding to reproduce the observable JS output.
+pub fn apple(rgb: [u8; 3]) -> [f64; 3] {
+    [
+        (f64::from(rgb[0]) / 255.0) * 65535.0,
+        (f64::from(rgb[1]) / 255.0) * 65535.0,
+        (f64::from(rgb[2]) / 255.0) * 65535.0,
+    ]
+}
