@@ -304,6 +304,44 @@ pub fn gray(rgb: [u8; 3]) -> [f64; 1] {
     [value / 255.0 * 100.0]
 }
 
+/// Converts an RGB triple to an ANSI-16 terminal color code (30–37, 40–47,
+/// 90–97, 100–107).
+///
+/// Faithful port of `convert.rgb.ansi16` (color-convert@3.1.3 conversions.js,
+/// lines 643–666). The algorithm:
+///
+/// 1. Convert RGB → HSV via [`hsv`]; extract the V (value) channel.
+/// 2. Bucket the value into 0, 1, or 2 via `round(v / 50)`.
+/// 3. If value == 0 → return 30 (foreground black).
+/// 4. Pack the raw R/G/B channels into a 3-bit colour index
+///    (`round(c/255)` for each channel c; equivalent to `c >= 128` for u8).
+/// 5. `ansi = 30 + ((bbit << 2) | (gbit << 1) | rbit)`.
+/// 6. If value == 2 → `ansi += 60`.
+///
+/// The returned `u16` is an exact integer code; no rounding tolerance applies.
+pub fn ansi16(rgb: [u8; 3]) -> u16 {
+    let hsv_vals = hsv(rgb);
+    let value = (hsv_vals[2] / 50.0).round() as i32;
+
+    if value == 0 {
+        return 30;
+    }
+
+    // Bits: round(c/255) for u8 c is 1 iff c >= 128, 0 otherwise.
+    // Provably equivalent: c>=128 ⇔ round(c/255)==1 for all u8 inputs.
+    let rbit = if rgb[0] >= 128 { 1u16 } else { 0u16 };
+    let gbit = if rgb[1] >= 128 { 1u16 } else { 0u16 };
+    let bbit = if rgb[2] >= 128 { 1u16 } else { 0u16 };
+
+    let mut ansi: u16 = 30 + ((bbit << 2) | (gbit << 1) | rbit);
+
+    if value == 2 {
+        ansi += 60;
+    }
+
+    ansi
+}
+
 /// Converts an RGB triple to raw Apple 16-bit RGB floats
 /// `[r16 (0-65535), g16 (0-65535), b16 (0-65535)]`.
 ///
