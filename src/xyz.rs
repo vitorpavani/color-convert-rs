@@ -77,3 +77,25 @@ pub fn lab(xyz: [f64; 3]) -> [f64; 3] {
 
     [l, a, b]
 }
+
+/// Converts an XYZ triple to raw OkLab floats `[l (0-100), a, b]`.
+///
+/// Faithful port of `convert.xyz.oklab` (color-convert@3.1.3 conversions.js,
+/// lines 528–542). Normalises XYZ by 100, applies the OkLab forward matrix,
+/// takes the cube root of each linear response, then mixes through the
+/// perceptual matrix — returning each channel scaled by 100.
+pub fn oklab(xyz: [f64; 3]) -> [f64; 3] {
+    let x = xyz[0] / 100.0;
+    let y = xyz[1] / 100.0;
+    let z = xyz[2] / 100.0;
+
+    let lp = (0.8189330101 * x + 0.3618667424 * y - 0.1288597137 * z).cbrt();
+    let mp = (0.0329845436 * x + 0.9293118715 * y + 0.0361456387 * z).cbrt();
+    let sp = (0.0482003018 * x + 0.2643662691 * y + 0.633851707 * z).cbrt();
+
+    let l = 0.2104542553 * lp + 0.793617785 * mp - 0.0040720468 * sp;
+    let a = 1.9779984951 * lp - 2.428592205 * mp + 0.4505937099 * sp;
+    let b = 0.0259040371 * lp + 0.7827717662 * mp - 0.808675766 * sp;
+
+    [l * 100.0, a * 100.0, b * 100.0]
+}
