@@ -251,3 +251,31 @@ fn rgb_to_hcg_matches_js_vectors() {
         VecValue::Nums(vec![h.round(), c.round(), g.round()])
     });
 }
+
+// ── rgb → gray ────────────────────────────────────────────────────────
+
+/// API pinned for GREEN: `rgb::gray(rgb: [u8; 3]) -> [f64; 1]` returning a
+/// RAW (unrounded) float `[gray]`, mirroring `convert.rgb.gray` in
+/// color-convert's conversions.js (lines 977-980).
+///
+/// The JS algorithm:
+///   value = (r + g + b) / 3
+///   return [value / 255 * 100]
+///
+/// Single-channel output `[f64; 1]` (unlike hsl/hsv/hwb/hcg which return
+/// `[f64; 3]`, or cmyk which returns `[f64; 4]`). The JS public wrapper
+/// applies `Math.round` to the single value — so the test rounds here.
+///
+/// Tolerance: 0.0 after rounding (exact match against the JS-rounded
+/// vectors in `tests/vectors/rgb_to_gray.json`, 32 cases). The gray value
+/// is non-negative, so Rust's half-away-from-zero `f64::round` coincides
+/// with JS `Math.round` (half toward +infinity) on this route.
+#[test]
+fn rgb_to_gray_matches_js_vectors() {
+    let vectors = load_route("rgb", "gray");
+    assert_cases("rgb_to_gray", &vectors.cases, 0.0, |input| {
+        let [v] = rgb::gray(rgb_input(input));
+        // Single-channel gray: mirror the JS public wrapper's Math.round.
+        VecValue::Nums(vec![v.round()])
+    });
+}
