@@ -28,6 +28,21 @@ wgpu = "30.0.0"
 # (Rule 9: issue #21)
 pollster = "0.4"
 
+# Multi-platform high-performance compute language extension for Rust.
+# Used for the GPU batch color conversion kernel (rgb→lab) via the wgpu
+# backend. Only the runtime client creation, upload, kernel launch, and
+# read-back APIs are used — no custom wgsl shaders or manual pipeline
+# configuration. (Rule 9: issue #22 — CubeCL GPU kernel for batch color
+# conversion)
+cubecl = { version = "0.10", features = ["wgpu"] }
+
+# Tiny, zero-copy typed-casting library for reinterpreting byte slices as
+# typed f32/u8 slices without unsafe transmutes. Required by CubeCL's
+# `create_from_slice` (which expects bytemuck::Pod input) and for
+# casting the read-back byte buffer into f32 pixel data.
+# (Rule 9: issue #22 — GPU kernel data upload/readback)
+bytemuck = "1"
+
 [profile.release]
 lto = true
 

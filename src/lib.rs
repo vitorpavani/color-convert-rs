@@ -9,6 +9,7 @@ pub mod apple;
 pub mod cmyk;
 mod color_name;
 pub mod convert;
+pub mod gpu;
 mod error;
 pub mod gray;
 pub mod hcg;
