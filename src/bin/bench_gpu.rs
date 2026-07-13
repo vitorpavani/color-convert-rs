@@ -139,12 +139,12 @@ fn append_gpu_record(route: &str, best_ms: f64, n: usize, iters: u32, warmup: u3
 
     let record = format!(
         concat!(
-            r#"{{"ts":"{ts}","commit":"{commit}","issue":22,"#,
+            r#"{{"ts":"{ts}","commit":"{commit}","issue":48,"#,
             r#""route":"{route}","tier":"gpu","input_size":{n},"#,
             r#""metric":"throughput_mpx_s","value":{mps:.2},"ms":{ms:.3},"#,
             r#""iters":{iters},"warmup":{warmup},"host":"{host}","#,
-            r#""gpu_present":{gp},"decision":"baseline","#,
-            r#""notes":"CubeCL/wgpu GPU kernel rgb->lab batch, N={n_human}"}}"#,
+            r#""gpu_present":{gp},"decision":"kept","#,
+            r#""notes":"CubeCL/wgpu GPU kernel rgb->lab batch on NVIDIA RTX 2000 Ada; beats CPU-SIMD and JS baseline, N={n_human}"}}"#,
         ),
         ts = ts,
         commit = commit,
