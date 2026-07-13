@@ -97,3 +97,28 @@ pub fn hsv(hsl: [f64; 3]) -> [f64; 3] {
 
     [h, sv * 100.0, v * 100.0]
 }
+
+/// Converts an HSL triple to raw HCG floats `[h (0-360), c (0-100), g (0-100)]`.
+///
+/// Faithful port of `convert.hsl.hcg` (color-convert@3.1.3 conversions.js,
+/// lines 806–818). Chroma is derived from saturation and lightness; the gray
+/// component measures how close the colour is to a neutral gray at that
+/// lightness.
+pub fn hcg(hsl: [f64; 3]) -> [f64; 3] {
+    let s = hsl[1] / 100.0;
+    let l = hsl[2] / 100.0;
+
+    let c = if l < 0.5 {
+        2.0 * s * l
+    } else {
+        2.0 * s * (1.0 - l)
+    };
+
+    let f = if c < 1.0 {
+        (l - 0.5 * c) / (1.0 - c)
+    } else {
+        0.0
+    };
+
+    [hsl[0], c * 100.0, f * 100.0]
+}
