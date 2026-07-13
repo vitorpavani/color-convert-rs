@@ -282,3 +282,21 @@ pub fn hcg(rgb: [u8; 3]) -> [f64; 3] {
 
     [hue * 360.0, chroma * 100.0, grayscale * 100.0]
 }
+
+/// Converts an RGB triple to a single raw gray value `[0-100]`.
+///
+/// Faithful port of `convert.rgb.gray` (color-convert@3.1.3 conversions.js,
+/// lines 977-980). The raw `[u8; 3]` channels are averaged and then scaled:
+///
+/// ```text
+/// value = (r + g + b) / 3
+/// return [value / 255 * 100]
+/// ```
+///
+/// Single-channel output `[f64; 1]` (unrounded). The JS public wrapper
+/// applies `Math.round` to the single value, so the caller (or test) is
+/// responsible for rounding to reproduce the observable JS output.
+pub fn gray(rgb: [u8; 3]) -> [f64; 1] {
+    let value = (f64::from(rgb[0]) + f64::from(rgb[1]) + f64::from(rgb[2])) / 3.0;
+    [value / 255.0 * 100.0]
+}
