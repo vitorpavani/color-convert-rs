@@ -81,3 +81,14 @@ fn gray_to_cmyk_matches_js_vectors() {
         VecValue::Nums(vec![c.round(), m.round(), y.round(), k.round()])
     });
 }
+
+// ── gray → lab ───────────────────────────────────────────────────────────────
+
+#[test]
+fn gray_to_lab_matches_js_vectors() {
+    let vectors = load_route("gray", "lab");
+    assert_cases("gray_to_lab", &vectors.cases, 0.0, |input| {
+        let [l, a, b] = gray::lab(gray_input(input));
+        VecValue::Nums(vec![l.round(), a.round(), b.round()])
+    });
+}
