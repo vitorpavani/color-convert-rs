@@ -60,3 +60,15 @@ fn hsv_to_hsl_matches_js_vectors() {
         VecValue::Nums(vec![h.round(), s.round(), l.round()])
     });
 }
+
+// ── hsv → hcg ───────────────────────────────────────────────────────────────
+
+#[test]
+fn hsv_to_hcg_matches_js_vectors() {
+    let vectors = load_route("hsv", "hcg");
+    assert_cases("hsv_to_hcg", &vectors.cases, 0.0, |input| {
+        let [h, c, g] = hsv::hcg(hsv_input(input));
+        // Mirror the JS public wrapper's per-channel Math.round (see module doc).
+        VecValue::Nums(vec![h.round(), c.round(), g.round()])
+    });
+}
