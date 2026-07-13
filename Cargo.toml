@@ -6,10 +6,15 @@ edition = "2024"
 [lib]
 name = "color_convert_rs"
 
+[[bin]]
+name = "bench"
+
 [dependencies]
 # Derive-based library error enum: library code returns Result<_, Error> with
 # no unwrap()/expect() in lib paths (Rule 9: issue #4).
 thiserror = "2.0.17"
+# Portable explicit SIMD for batch matrix math (Rule 9: issue #20).
+wide = "1.5"
 
 # Runtime GPU capability probe: at startup, enumerate wgpu adapters to decide
 # whether the GPU compute path (CubeCL via wgpu) is available, or whether to
