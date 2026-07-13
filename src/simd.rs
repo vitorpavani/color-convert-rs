@@ -134,6 +134,71 @@ pub fn rgb_to_xyz_batch(rgb: &[[u8; 3]]) -> Vec<[f64; 3]> {
 /// # Panics
 ///
 /// Does not panic — every `[f64;3]` is a valid XYZ triple.
-pub fn xyz_to_lab_batch(_xyz: &[[f64; 3]]) -> Vec<[f64; 3]> {
-    unimplemented!("SIMD xyz→lab batch — GREEN phase")
+pub fn xyz_to_lab_batch(xyz: &[[f64; 3]]) -> Vec<[f64; 3]> {
+    use wide::f64x4;
+
+    let n = xyz.len();
+    let mut result = Vec::with_capacity(n);
+    let mut i = 0;
+
+    // D65 reference white-point divisors (CIE 1931 2° observer)
+    let xn = f64x4::splat(95.047);
+    let yn = f64x4::splat(100.0);
+    let zn = f64x4::splat(108.883);
+
+    while i + 3 < n {
+        let x = f64x4::new([xyz[i][0], xyz[i + 1][0], xyz[i + 2][0], xyz[i + 3][0]]);
+        let y = f64x4::new([xyz[i][1], xyz[i + 1][1], xyz[i + 2][1], xyz[i + 3][1]]);
+        let z = f64x4::new([xyz[i][2], xyz[i + 1][2], xyz[i + 2][2], xyz[i + 3][2]]);
+
+        let x_norm = x / xn;
+        let y_norm = y / yn;
+        let z_norm = z / zn;
+
+        // Extract lanes for the piecewise LAB transfer (scalar cbrt).
+        let x_arr = x_norm.to_array();
+        let y_arr = y_norm.to_array();
+        let z_arr = z_norm.to_array();
+        let fx = f64x4::new([
+            crate::xyz::lab_transfer(x_arr[0]),
+            crate::xyz::lab_transfer(x_arr[1]),
+            crate::xyz::lab_transfer(x_arr[2]),
+            crate::xyz::lab_transfer(x_arr[3]),
+        ]);
+        let fy = f64x4::new([
+            crate::xyz::lab_transfer(y_arr[0]),
+            crate::xyz::lab_transfer(y_arr[1]),
+            crate::xyz::lab_transfer(y_arr[2]),
+            crate::xyz::lab_transfer(y_arr[3]),
+        ]);
+        let fz = f64x4::new([
+            crate::xyz::lab_transfer(z_arr[0]),
+            crate::xyz::lab_transfer(z_arr[1]),
+            crate::xyz::lab_transfer(z_arr[2]),
+            crate::xyz::lab_transfer(z_arr[3]),
+        ]);
+
+        // CIE L*a*b* linear combination — SIMD
+        let l = fy * f64x4::splat(116.0) - f64x4::splat(16.0);
+        let a = (fx - fy) * f64x4::splat(500.0);
+        let b = (fy - fz) * f64x4::splat(200.0);
+
+        let l_arr = l.to_array();
+        let a_arr = a.to_array();
+        let b_arr = b.to_array();
+
+        for j in 0..4 {
+            result.push([l_arr[j], a_arr[j], b_arr[j]]);
+        }
+
+        i += 4;
+    }
+
+    // Scalar remainder for the final 0–3 pixels.
+    while i < n {
+        result.push(crate::xyz::lab(xyz[i]));
+        i += 1;
+    }
+
+    result
 }
