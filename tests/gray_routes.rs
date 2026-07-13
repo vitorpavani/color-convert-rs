@@ -92,3 +92,14 @@ fn gray_to_lab_matches_js_vectors() {
         VecValue::Nums(vec![l.round(), a.round(), b.round()])
     });
 }
+
+// ── gray → hex ───────────────────────────────────────────────────────────────
+
+#[test]
+fn gray_to_hex_matches_js_vectors() {
+    let vectors = load_route("gray", "hex");
+    assert_cases("gray_to_hex", &vectors.cases, 0.0, |input| {
+        let s = gray::hex(gray_input(input));
+        VecValue::Text(s)
+    });
+}
