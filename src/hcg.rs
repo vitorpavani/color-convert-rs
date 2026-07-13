@@ -88,6 +88,9 @@ pub fn hsl(hcg: [f64; 3]) -> [f64; 3] {
 ///
 /// Faithful port of `convert.hcg.hwb` (color-convert@3.1.3 conversions.js,
 /// lines 916–921).
-pub fn hwb(_hcg: [f64; 3]) -> [f64; 3] {
-    todo!()
+pub fn hwb(hcg: [f64; 3]) -> [f64; 3] {
+    let c = hcg[1] / 100.0;
+    let g = hcg[2] / 100.0;
+    let v = c + g * (1.0 - c);
+    [hcg[0], (v - c) * 100.0, (1.0 - v) * 100.0]
 }
