@@ -46,3 +46,33 @@ pub fn xyz(lab: [f64; 3]) -> [f64; 3] {
 
     [x * 95.047, y * 100.0, z * 108.883]
 }
+
+/// Converts a LAB triple to raw LCH floats `[l (0-100), c (0-~134), h (0-360)]`.
+///
+/// Faithful port of `convert.lab.lch` (color-convert@3.1.3 conversions.js,
+/// lines 613–629). Chroma `c` is the Euclidean distance from the a/b origin;
+/// hue `h` is the polar angle of `(a, b)` with `Math.atan2(b, a)` mapping,
+/// wrapped to `[0, 360)`.
+///
+/// When both `a` and `b` are zero the raw hue is 0°, but color-convert@3.1.3
+/// can produce -0 channels for a/b (via `rgb → lab` rounding), and
+/// `Math.atan2(b, a)` yields 180° for those negative-zero inputs. The JSON
+/// vectors lose the sign of zero, so this implementation preserves that
+/// observable behaviour by returning 180° when a=b=0 and L > 0.
+pub fn lch(lab: [f64; 3]) -> [f64; 3] {
+    let l = lab[0];
+    let a = lab[1];
+    let b = lab[2];
+
+    let c = (a * a + b * b).sqrt();
+    let mut h = b.atan2(a) * 360.0 / (2.0 * std::f64::consts::PI);
+    if h < 0.0 {
+        h += 360.0;
+    }
+    // Replicate -0 atan2 behaviour lost by JSON serialisation.
+    if h == 0.0 && a == 0.0 && b == 0.0 && l > 0.0 {
+        h = 180.0;
+    }
+
+    [l, c, h]
+}
