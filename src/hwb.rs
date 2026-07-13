@@ -51,3 +51,17 @@ pub fn rgb(hwb: [f64; 3]) -> [f64; 3] {
 
     [r * 255.0, g * 255.0, b * 255.0]
 }
+
+/// Converts an HWB triple to raw HCG floats `[h (0-360), c (0-100), g (0-100)]`.
+///
+/// Faithful port of `convert.hwb.hcg` (color-convert@3.1.3 conversions.js,
+/// lines 923–935).
+pub fn hcg(hwb: [f64; 3]) -> [f64; 3] {
+    let w = hwb[1] / 100.0;
+    let b = hwb[2] / 100.0;
+    let v = 1.0 - b;
+    let c = v - w;
+    let g = if c < 1.0 { (v - c) / (1.0 - c) } else { 0.0 };
+
+    [hwb[0], c * 100.0, g * 100.0]
+}
