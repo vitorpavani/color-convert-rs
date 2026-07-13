@@ -46,3 +46,23 @@ fn hsl_to_rgb_matches_js_vectors() {
         VecValue::Nums(vec![r.round(), g.round(), b.round()])
     });
 }
+
+// ── hsl → hsv ───────────────────────────────────────────────────────────────
+
+/// HSL→HSV conversion, pinning API `hsl::hsv(hsl: [f64; 3]) -> [f64; 3]`.
+///
+/// Returns raw (unrounded) floats `[h (0-360), s (0-100), v (0-100)]`.  The
+/// JS public wrapper applies per-channel `Math.round`, so the test rounds here.
+/// HSV channels are non-negative, therefore Rust's `f64::round` (half away from
+/// zero) and JS `Math.round` (half toward +∞) coincide — tolerance 0.0 after
+/// rounding.
+///
+/// Reference: `convert.hsl.hsv` (color-convert@3.1.3, conversions.js 347–361).
+#[test]
+fn hsl_to_hsv_matches_js_vectors() {
+    let vectors = load_route("hsl", "hsv");
+    assert_cases("hsl_to_hsv", &vectors.cases, 0.0, |input| {
+        let [h, s, v] = hsl::hsv(hsl_input(input));
+        VecValue::Nums(vec![h.round(), s.round(), v.round()])
+    });
+}
