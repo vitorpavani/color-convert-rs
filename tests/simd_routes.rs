@@ -52,8 +52,7 @@ fn rgb_to_xyz_batch_matches_scalar() {
             "batch size mismatch for n={n}"
         );
 
-        for (i, (simd_val, scalar_val)) in simd_result.iter().zip(scalar.iter()).enumerate()
-        {
+        for (i, (simd_val, scalar_val)) in simd_result.iter().zip(scalar.iter()).enumerate() {
             for chan in 0..3 {
                 assert!(
                     (simd_val[chan] - scalar_val[chan]).abs() <= 0.0,
