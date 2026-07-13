@@ -44,3 +44,11 @@ pub fn hwb(gray: [f64; 1]) -> [f64; 3] {
 pub fn cmyk(gray: [f64; 1]) -> [f64; 4] {
     [0.0, 0.0, 0.0, gray[0]]
 }
+
+/// Converts grayscale to CIELAB (L*a*b*).
+///
+/// Mirror of `convert.gray.lab` (lines 963–965):
+/// `return [gray[0], 0, 0]`
+pub fn lab(gray: [f64; 1]) -> [f64; 3] {
+    [gray[0], 0.0, 0.0]
+}
