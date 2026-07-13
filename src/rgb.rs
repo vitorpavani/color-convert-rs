@@ -48,3 +48,45 @@ pub fn hsl(rgb: [u8; 3]) -> [f64; 3] {
 
     [h, s * 100.0, l * 100.0]
 }
+
+/// Converts an RGB triple to raw HSV floats `[h (0-360), s (0-100), v (0-100)]`.
+///
+/// Faithful port of `convert.rgb.hsv` (color-convert@3.1.3 conversions.js,
+/// lines 128-186). The JS `switch (v)` matches channels in r, g, b order via
+/// strict equality; the compared values are exact `/255.0` divisions of the
+/// same inputs, so direct `==` reproduces that control flow bit-for-bit.
+pub fn hsv(rgb: [u8; 3]) -> [f64; 3] {
+    let r = f64::from(rgb[0]) / 255.0;
+    let g = f64::from(rgb[1]) / 255.0;
+    let b = f64::from(rgb[2]) / 255.0;
+    let v = r.max(g).max(b);
+    let diff = v - r.min(g).min(b);
+
+    let (h, s) = if diff == 0.0 {
+        (0.0, 0.0)
+    } else {
+        let diffc = |c: f64| (v - c) / 6.0 / diff + 0.5;
+        let rdif = diffc(r);
+        let gdif = diffc(g);
+        let bdif = diffc(b);
+
+        let mut h = if v == r {
+            bdif - gdif
+        } else if v == g {
+            1.0 / 3.0 + rdif - bdif
+        } else {
+            // v == b (last case of the JS switch; no default arm exists)
+            2.0 / 3.0 + gdif - rdif
+        };
+
+        if h < 0.0 {
+            h += 1.0;
+        } else if h > 1.0 {
+            h -= 1.0;
+        }
+
+        (h, diff / v)
+    };
+
+    [h * 360.0, s * 100.0, v * 100.0]
+}
