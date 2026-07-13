@@ -94,3 +94,15 @@ pub fn hsv(rgb: [u8; 3]) -> [f64; 3] {
 
     [h * 360.0, s * 100.0, v * 100.0]
 }
+
+/// Converts an RGB triple to raw HWB floats `[h (0-360), w (0-100), b (0-100)]`.
+///
+/// Faithful port of `convert.rgb.hwb` (color-convert@3.1.3 conversions.js,
+/// lines 188-198). The hue is derived from `hsl(rgb)[0]`, while whiteness and
+/// blackness are computed from the min and max of the normalized channel
+/// fractions.
+pub fn hwb(rgb: [u8; 3]) -> [f64; 3] {
+    let (_r, _g, _b, min, max, _delta) = normalize_rgb(rgb);
+    let h = hsl(rgb)[0];
+    [h, min * 100.0, (1.0 - max) * 100.0]
+}
