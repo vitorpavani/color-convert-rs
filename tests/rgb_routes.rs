@@ -220,3 +220,34 @@ fn rgb_to_oklab_matches_js_vectors() {
         VecValue::Nums(vec![js_round(l), js_round(a), js_round(b)])
     });
 }
+
+// ── rgb → hcg ────────────────────────────────────────────────────────
+
+/// API pinned for GREEN: `rgb::hcg(rgb: [u8; 3]) -> [f64; 3]` returning
+/// RAW (unrounded) floats `[h (0-360), c (0-100), g (0-100)]`, mirroring
+/// `convert.rgb.hcg` in color-convert's conversions.js (lines 779-803).
+///
+/// The JS algorithm:
+///   chroma    = max - min
+///   grayscale = chroma < 1 ? min / (1 - chroma) : 0
+///   hue       = derived from max channel with `(g-b)/chroma % 6`
+///               (JS remainder); then hue /= 6, hue %= 1
+///   return [hue * 360, chroma * 100, grayscale * 100]
+///
+/// The JS public wrapper applies `Math.round` per channel — so the test
+/// rounds here.
+///
+/// Tolerance: 0.0 after per-channel rounding (exact match against the
+/// JS-rounded vectors in `tests/vectors/rgb_to_hcg.json`, 32 cases).
+/// All hcg channels are non-negative, so Rust's half-away-from-zero
+/// `f64::round` coincides with JS `Math.round` (half toward +infinity)
+/// on this route.
+#[test]
+fn rgb_to_hcg_matches_js_vectors() {
+    let vectors = load_route("rgb", "hcg");
+    assert_cases("rgb_to_hcg", &vectors.cases, 0.0, |input| {
+        let [h, c, g] = rgb::hcg(rgb_input(input));
+        // Mirror the JS public wrapper's per-channel Math.round (see doc above).
+        VecValue::Nums(vec![h.round(), c.round(), g.round()])
+    });
+}
