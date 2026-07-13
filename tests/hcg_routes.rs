@@ -13,9 +13,10 @@
 //!
 //! Tolerance: 0.0. After per-channel rounding the output must match the
 //! rounded JS vector EXACTLY. Rounding-mode note: Rust's `f64::round` rounds
-//! half away from zero while JS `Math.round` rounds half toward +infinity;
-//! these differ only for negative values, and all output channels on every
-//! HCG route are non-negative, so the semantics coincide.
+//! half away from zero while JS `Math.round` rounds half toward +infinity.
+//! The hue channel is passed through unchanged (integer in every vector), and
+//! all computed channels (s/v/l/w/b) are non-negative, so rounding semantics
+//! coincide on every case in the committed vectors.
 //!
 //! ## Routes (4)
 //!
