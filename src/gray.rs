@@ -28,3 +28,11 @@ pub fn hsl(gray: [f64; 1]) -> [f64; 3] {
 pub fn hsv(gray: [f64; 1]) -> [f64; 3] {
     [0.0, 0.0, gray[0]]
 }
+
+/// Converts grayscale to HWB.
+///
+/// Mirror of `convert.gray.hwb` (lines 955–957):
+/// `return [0, 100, gray[0]]`
+pub fn hwb(gray: [f64; 1]) -> [f64; 3] {
+    [0.0, 100.0, gray[0]]
+}
