@@ -49,3 +49,15 @@ fn xyz_to_rgb_matches_js_vectors() {
         VecValue::Nums(vec![r.round(), g.round(), b.round()])
     });
 }
+
+// ── xyz → lab ────────────────────────────────────────────────────────────────
+
+#[test]
+fn xyz_to_lab_matches_js_vectors() {
+    let vectors = load_route("xyz", "lab");
+    assert_cases("xyz_to_lab", &vectors.cases, 0.0, |input| {
+        let [l, a, b] = xyz::lab(xyz_input(input));
+        // a and b may be negative → use JS-equivalent rounding (half toward +∞).
+        VecValue::Nums(vec![js_round(l), js_round(a), js_round(b)])
+    });
+}
