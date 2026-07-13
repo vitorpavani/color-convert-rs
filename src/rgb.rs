@@ -134,3 +134,39 @@ pub fn cmyk(rgb: [u8; 3]) -> [f64; 4] {
 
     [c * 100.0, m * 100.0, y * 100.0, k * 100.0]
 }
+
+/// sRGB inverse nonlinear transform (gamma expansion).
+///
+/// Faithful port of the anonymous function inside `convert.rgb.xyz`
+/// (color-convert@3.1.3 conversions.js, lines 273-277). Given a linearised
+/// channel value `c` in [0.0, 1.0], this applies the piecewise inverse
+/// transfer function: `c > 0.04045 ? ((c+0.055)/1.055)^2.4 : c/12.92`.
+///
+/// This is a reusable helper — it is also required by rgb→lab and rgb→oklab.
+fn srgb_nonlinear_transform_inv(c: f64) -> f64 {
+    if c > 0.04045 {
+        ((c + 0.055) / 1.055).powf(2.4)
+    } else {
+        c / 12.92
+    }
+}
+
+/// Converts an RGB triple to raw XYZ floats `[x (0-100), y (0-100), z (0-100)]`.
+///
+/// Faithful port of `convert.rgb.xyz` (color-convert@3.1.3 conversions.js,
+/// lines 270-281). Each channel is normalised to [0,1] by `/255.0`, the
+/// sRGB inverse nonlinear transform is applied, and then the result is
+/// multiplied by the sRGB→XYZ matrix (CIE XYZ tristimulus values, D65
+/// illuminant, 2° observer). The matrix coefficients are taken verbatim
+/// from the JS source.
+pub fn xyz(rgb: [u8; 3]) -> [f64; 3] {
+    let r = srgb_nonlinear_transform_inv(f64::from(rgb[0]) / 255.0);
+    let g = srgb_nonlinear_transform_inv(f64::from(rgb[1]) / 255.0);
+    let b = srgb_nonlinear_transform_inv(f64::from(rgb[2]) / 255.0);
+
+    let x = r * 0.4124564 + g * 0.3575761 + b * 0.1804375;
+    let y = r * 0.2126729 + g * 0.7151522 + b * 0.0721750;
+    let z = r * 0.0193339 + g * 0.1191920 + b * 0.9503041;
+
+    [x * 100.0, y * 100.0, z * 100.0]
+}
