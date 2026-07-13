@@ -37,6 +37,10 @@ fn gpu_present_is_pure_boolean_query_no_panic() {
     // Call repeatedly to prove determinism and lack of side-effects.
     let first = gpu_present();
     for _ in 0..10 {
-        assert_eq!(gpu_present(), first, "gpu_present() must be deterministic per run");
+        assert_eq!(
+            gpu_present(),
+            first,
+            "gpu_present() must be deterministic per run"
+        );
     }
 }
