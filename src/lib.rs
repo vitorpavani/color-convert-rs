@@ -5,14 +5,17 @@
 
 pub mod ansi16;
 pub mod ansi256;
+pub mod apple;
 pub mod cmyk;
 mod color_name;
 mod error;
+pub mod gray;
 pub mod hcg;
 pub mod hex;
 pub mod hsl;
 pub mod hsv;
 pub mod hwb;
+pub mod keyword;
 pub mod lab;
 pub mod lch;
 pub mod oklab;
