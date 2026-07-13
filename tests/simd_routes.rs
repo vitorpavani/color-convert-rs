@@ -11,6 +11,7 @@
 
 use color_convert_rs::rgb;
 use color_convert_rs::simd;
+use color_convert_rs::xyz;
 
 // ── Deterministic PRNG (mulberry32, seed=42) ─────────────────────────
 // Mirrors benchmarks/js/bench.mjs for reproducible input generation.
@@ -45,6 +46,38 @@ fn rgb_to_xyz_batch_matches_scalar() {
         let pixels = generate_rgb_pixels(n);
         let scalar: Vec<[f64; 3]> = pixels.iter().map(|&p| rgb::xyz(p)).collect();
         let simd_result = simd::rgb_to_xyz_batch(&pixels);
+
+        assert_eq!(
+            simd_result.len(),
+            scalar.len(),
+            "batch size mismatch for n={n}"
+        );
+
+        for (i, (simd_val, scalar_val)) in simd_result.iter().zip(scalar.iter()).enumerate() {
+            for chan in 0..3 {
+                assert!(
+                    (simd_val[chan] - scalar_val[chan]).abs() <= 0.0,
+                    "pixel {i} channel {chan}: simd={} scalar={} diff={}",
+                    simd_val[chan],
+                    scalar_val[chan],
+                    (simd_val[chan] - scalar_val[chan]).abs()
+                );
+            }
+        }
+    }
+}
+
+/// Behavior 2: `xyz_to_lab_batch` must produce bit-identical results to
+/// calling `xyz::lab` on each pixel in the batch. XYZ inputs are generated
+/// from the deterministic RGB batch via `rgb::xyz` to exercise the full
+/// piecewise LAB transfer (cbrt and linear branches).
+#[test]
+fn xyz_to_lab_batch_matches_scalar() {
+    for n in [1, 3, 4, 7, 8, 15, 16, 100, 257] {
+        let rgb_pixels = generate_rgb_pixels(n);
+        let xyz_pixels: Vec<[f64; 3]> = rgb_pixels.iter().map(|&p| rgb::xyz(p)).collect();
+        let scalar: Vec<[f64; 3]> = xyz_pixels.iter().map(|&p| xyz::lab(p)).collect();
+        let simd_result = simd::xyz_to_lab_batch(&xyz_pixels);
 
         assert_eq!(
             simd_result.len(),

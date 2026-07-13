@@ -123,3 +123,17 @@ pub fn rgb_to_xyz_batch(rgb: &[[u8; 3]]) -> Vec<[f64; 3]> {
 
     result
 }
+
+/// Process a batch of XYZ pixels into CIE L*a*b* via D65 normalization + transfer.
+///
+/// Processes 4 pixels at a time using `f64x4` SIMD lanes for the linear
+/// combination (L, a, b formulas); extracts lanes for the scalar piecewise
+/// LAB transfer function (cbrt / linear) and re-packs. Remainder pixels
+/// fall back to the scalar [`crate::xyz::lab`].
+///
+/// # Panics
+///
+/// Does not panic — every `[f64;3]` is a valid XYZ triple.
+pub fn xyz_to_lab_batch(_xyz: &[[f64; 3]]) -> Vec<[f64; 3]> {
+    unimplemented!("SIMD xyz→lab batch — GREEN phase")
+}
