@@ -52,7 +52,7 @@ fn srgb_nonlinear_transform(c: f64) -> f64 {
 /// Mirrors the inline triplicate in `convert.xyz.lab` (conversions.js
 /// lines 517–519). Kept private — only the public conversion functions
 /// consume it.
-fn lab_transfer(t: f64) -> f64 {
+pub(crate) fn lab_transfer(t: f64) -> f64 {
     let delta_cubed = (6.0_f64 / 29.0).powi(3);
     if t > delta_cubed {
         t.cbrt()

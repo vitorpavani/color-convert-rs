@@ -13,6 +13,8 @@ name = "bench"
 # Derive-based library error enum: library code returns Result<_, Error> with
 # no unwrap()/expect() in lib paths (Rule 9: issue #4).
 thiserror = "2.0.17"
+# Portable explicit SIMD for batch matrix math (Rule 9: issue #20).
+wide = "1.5"
 
 [profile.release]
 lto = true

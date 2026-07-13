@@ -186,7 +186,7 @@ pub(crate) fn cmyk_f64(rgb: [f64; 3]) -> [f64; 4] {
 /// transfer function: `c > 0.04045 ? ((c+0.055)/1.055)^2.4 : c/12.92`.
 ///
 /// This is a reusable helper — it is also required by rgb→lab and rgb→oklab.
-fn srgb_nonlinear_transform_inv(c: f64) -> f64 {
+pub(crate) fn srgb_nonlinear_transform_inv(c: f64) -> f64 {
     if c > 0.04045 {
         ((c + 0.055) / 1.055).powf(2.4)
     } else {

@@ -94,6 +94,7 @@ function benchmark(pixels, warmup, iters, fn) {
 const ROUTES = {
   'rgb->hsl': (r, g, b) => convert.rgb.hsl(r, g, b),
   'rgb->lab': (r, g, b) => convert.rgb.lab(r, g, b),
+  'rgb->xyz': (r, g, b) => convert.rgb.xyz(r, g, b),
   'rgb->hsl->rgb': (r, g, b) => {
     const hsl = convert.rgb.hsl(r, g, b);
     return convert.hsl.rgb(hsl[0], hsl[1], hsl[2]);
