@@ -10,6 +10,7 @@ pub mod hsl;
 pub mod hsv;
 pub mod hwb;
 pub mod lab;
+pub mod lch;
 pub mod rgb;
 
 pub use error::Error;
