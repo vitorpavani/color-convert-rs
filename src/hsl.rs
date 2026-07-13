@@ -69,3 +69,31 @@ pub fn rgb(hsl: [f64; 3]) -> [f64; 3] {
 
     [r, g, b]
 }
+
+/// Converts an HSL triple to raw HSV floats `[h (0-360), s (0-100), v (0-100)]`.
+///
+/// Faithful port of `convert.hsl.hsv` (color-convert@3.1.3 conversions.js,
+/// lines 347–361). The `l == 0.0` branch in the `sv` computation uses an
+/// exact float comparison against `hsl[2] * 2.0 / 100.0` — when the input
+/// lightness is zero, the doubled value is also exactly zero, matching the
+/// JS `l === 0` control flow.
+pub fn hsv(hsl: [f64; 3]) -> [f64; 3] {
+    let h = hsl[0];
+    let mut s = hsl[1] / 100.0;
+    let mut l = hsl[2] / 100.0;
+    let mut smin = s;
+    let lmin = l.max(0.01);
+
+    l *= 2.0;
+    s *= if l <= 1.0 { l } else { 2.0 - l };
+    smin *= if lmin <= 1.0 { lmin } else { 2.0 - lmin };
+
+    let v = (l + s) / 2.0;
+    let sv = if l == 0.0 {
+        (2.0 * smin) / (lmin + smin)
+    } else {
+        (2.0 * s) / (l + s)
+    };
+
+    [h, sv * 100.0, v * 100.0]
+}
