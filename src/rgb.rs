@@ -336,3 +336,52 @@ pub fn hex(rgb: [u8; 3]) -> String {
     let int_val: u32 = (u32::from(rgb[0]) << 16) | (u32::from(rgb[1]) << 8) | u32::from(rgb[2]);
     format!("{int_val:06X}")
 }
+
+/// Finds the nearest CSS color keyword for an RGB triple.
+///
+/// Faithful port of `convert.rgb.keyword` (color-convert@3.1.3 conversions.js,
+/// lines 241–264). The algorithm is:
+///
+/// 1. **Exact match** — scan all entries in `color_name::CSS_COLORS` in insertion
+///    order. If multiple entries share the same RGB, the *last* one wins (mirrors
+///    the JS `reverseKeywords` object-assignment behaviour where a later key
+///    overwrites an earlier one, e.g. `"grey"` overwrites `"gray"` for
+///    `[128,128,128]`).
+/// 2. **Nearest neighbour** (no exact match) — iterate in insertion order,
+///    compute squared Euclidean distance with `i32` arithmetic, and track the
+///    minimum with **strict `<`** so the *first* entry at the minimum distance
+///    wins (ties broken by insertion order).
+pub fn keyword(rgb: [u8; 3]) -> String {
+    // Exact-match pass: last matching entry wins (JS reverseKeywords semantics).
+    let mut exact: Option<&str> = None;
+    for (name, entry_rgb) in &crate::color_name::CSS_COLORS {
+        if *entry_rgb == rgb {
+            exact = Some(name);
+        }
+    }
+    if let Some(name) = exact {
+        return name.to_string();
+    }
+
+    // Nearest-neighbour fallback: first entry at minimum squared distance wins
+    // (strict `<`).
+    let r = i32::from(rgb[0]);
+    let g = i32::from(rgb[1]);
+    let b = i32::from(rgb[2]);
+
+    let mut best_name: &str = "";
+    let mut best_dist: i32 = i32::MAX;
+
+    for (name, entry_rgb) in &crate::color_name::CSS_COLORS {
+        let dr = r - i32::from(entry_rgb[0]);
+        let dg = g - i32::from(entry_rgb[1]);
+        let db = b - i32::from(entry_rgb[2]);
+        let dist = dr * dr + dg * dg + db * db;
+        if dist < best_dist {
+            best_dist = dist;
+            best_name = name;
+        }
+    }
+
+    best_name.to_string()
+}
