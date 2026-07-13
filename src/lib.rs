@@ -12,5 +12,6 @@ pub mod hwb;
 pub mod lab;
 pub mod lch;
 pub mod rgb;
+pub mod xyz;
 
 pub use error::Error;
