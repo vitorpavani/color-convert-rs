@@ -22,6 +22,7 @@ pub mod lch;
 pub mod oklab;
 pub mod oklch;
 pub mod rgb;
+pub mod simd;
 pub mod xyz;
 
 pub use convert::{Color, Model, convert, convert_rounded};
