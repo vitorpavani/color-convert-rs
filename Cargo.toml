@@ -10,3 +10,11 @@ name = "color_convert_rs"
 
 [profile.release]
 lto = true
+
+[dev-dependencies]
+# Parametric test-case runner for the vector harness (Rule 9: issue #3).
+rstest = "0.26.1"
+# Typed deserialization of tests/vectors/*.json into harness structs (Rule 9: issue #3).
+serde = { version = "1.0.228", features = ["derive"] }
+# JSON parsing of the committed JS-generated reference vectors (Rule 9: issue #3).
+serde_json = "1.0.150"
