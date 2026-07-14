@@ -18,10 +18,12 @@
 
 use color_convert_rs::rgb;
 use color_convert_rs::simd;
+use color_convert_rs::simd_oklab;
 use color_convert_rs::xyz;
 
 const XYZ_TOLERANCE: f64 = 5e-4;
 const LAB_TOLERANCE: f64 = 1e-3;
+const OKLAB_TOLERANCE: f64 = 1e-3;
 
 // ── Deterministic PRNG (mulberry32, seed=42) ─────────────────────────
 fn mulberry32(state: &mut u32) -> f64 {
@@ -160,6 +162,88 @@ fn rgb_to_lab_batch_matches_two_step() {
                     FUSED_TOLERANCE,
                 );
             }
+        }
+    }
+}
+
+/// Behavior 4: `rgb_to_oklab_batch` (f32x8 SIMD) must match the scalar
+/// `rgb::oklab` (f64) within OKLAB_TOLERANCE (1e-3) for batches including
+/// non-multiples of the SIMD lane width (8), plus edge cases: black, white,
+/// and the three primaries (red, green, blue).
+///
+/// The oklab pipeline is transcendental-heavy: sRGB inverse gamma
+/// (powf 2.4) → LMS matrix → cbrt³ → Oklab matrix → ×100. f32's ~7
+/// decimal digits of precision vs f64's ~15 allow a detectable gap after
+/// three transcendental steps (one powf branch + three cbrt lanes).
+/// OKLAB_TOLERANCE is set to 1e-3 — matching LAB_TOLERANCE from the
+/// existing xyz→lab route which has similar computational depth.
+///
+/// Edge cases exercise dark values (black → cbrt of near-zero), bright
+/// saturated primaries (clamped sRGB inverse gamma), and white (all
+/// channels at maximum, a/b near zero).
+#[test]
+fn rgb_to_oklab_batch_matches_scalar() {
+    for n in [1, 7, 8, 15, 16, 100, 257] {
+        let pixels = generate_rgb_pixels(n);
+        let scalar: Vec<[f64; 3]> = pixels.iter().map(|&p| rgb::oklab(p)).collect();
+        let simd_result = simd_oklab::rgb_to_oklab_batch(&pixels);
+
+        assert_eq!(
+            simd_result.len(),
+            scalar.len(),
+            "batch size mismatch for n={n}"
+        );
+
+        for (i, (simd_val, scalar_val)) in simd_result.iter().zip(scalar.iter()).enumerate() {
+            let _f32_check: [f32; 3] = *simd_val;
+
+            for chan in 0..3 {
+                let diff = (simd_val[chan] as f64 - scalar_val[chan]).abs();
+                assert!(
+                    diff <= OKLAB_TOLERANCE,
+                    "pixel {i} channel {chan}: simd(f32)={} scalar(f64)={} diff={:.2e} > tol={:.2e}",
+                    simd_val[chan],
+                    scalar_val[chan],
+                    diff,
+                    OKLAB_TOLERANCE,
+                );
+            }
+        }
+    }
+
+    // Edge cases: black, white, primaries
+    let edge_cases: [[u8; 3]; 5] = [
+        [0, 0, 0],       // black → L≈0, a≈0, b≈0
+        [255, 255, 255], // white → L≈100, a≈0, b≈0
+        [255, 0, 0],     // red primary
+        [0, 255, 0],     // green primary
+        [0, 0, 255],     // blue primary
+    ];
+
+    let scalar: Vec<[f64; 3]> = edge_cases.iter().map(|&p| rgb::oklab(p)).collect();
+    let simd_result = simd_oklab::rgb_to_oklab_batch(&edge_cases);
+
+    assert_eq!(
+        simd_result.len(),
+        scalar.len(),
+        "edge-case batch size mismatch"
+    );
+
+    for (i, (simd_val, scalar_val)) in simd_result.iter().zip(scalar.iter()).enumerate() {
+        let _f32_check: [f32; 3] = *simd_val;
+        for chan in 0..3 {
+            let diff = (simd_val[chan] as f64 - scalar_val[chan]).abs();
+            assert!(
+                diff <= OKLAB_TOLERANCE,
+                "edge pixel {i} [{},{},{}] channel {chan}: simd(f32)={} scalar(f64)={} diff={:.2e} > tol={:.2e}",
+                edge_cases[i][0],
+                edge_cases[i][1],
+                edge_cases[i][2],
+                simd_val[chan],
+                scalar_val[chan],
+                diff,
+                OKLAB_TOLERANCE,
+            );
         }
     }
 }
