@@ -6,7 +6,9 @@
 //!
 //! The scalar reference is [`crate::rgb::hwb`], which computes hue via
 //! `hsl_f64(rgb)[0]`, whiteness as `min×100`, and blackness as
-//! `(1-max)×100`. This SIMD path reuses the same 3-way mask-blend hue
+//! `(1-max)×100`. This matches the JS `convert.rgb.hwb`
+//! (color-convert@3.1.3 conversions.js, lines 188–198).
+//! This SIMD path reuses the same 3-way mask-blend hue
 //! computation as [`crate::simd_hsl::rgb_to_hsl_batch`], then adds the
 //! trivial w/b vector math.
 //!
