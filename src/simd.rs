@@ -20,6 +20,9 @@
 //!
 //! * `rgb→xyz`: absolute tolerance ≤ 5e-4 per channel
 //! * `xyz→lab`: absolute tolerance ≤ 1e-3 per channel
+//! * `rgb→lab` (fused): inherits both tolerances above; additionally, the
+//!   fused pass must match the two-step chain `xyz→lab(rgb→xyz(…))` within
+//!   `f32::EPSILON × 10` since both paths perform identical f32 arithmetic
 //!
 //! These tolerances are wide enough to accept the f32/f64 gap but narrow
 //! enough to catch real bugs (wrong coefficient, wrong branch condition).
