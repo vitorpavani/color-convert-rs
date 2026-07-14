@@ -89,15 +89,15 @@ fn rgb_to_apple_batch_edge_cases() {
         // Mid-grey: 128*257 = 32896
         [128, 128, 128],
         // Primary colours
-        [255, 0, 0],   // red    → [65535, 0, 0]
-        [0, 255, 0],   // green  → [0, 65535, 0]
-        [0, 0, 255],   // blue   → [0, 0, 65535]
+        [255, 0, 0], // red    → [65535, 0, 0]
+        [0, 255, 0], // green  → [0, 65535, 0]
+        [0, 0, 255], // blue   → [0, 0, 65535]
         // Secondary colours
         [255, 255, 0], // yellow → [65535, 65535, 0]
         [0, 255, 255], // cyan   → [0, 65535, 65535]
         [255, 0, 255], // magenta→ [65535, 0, 65535]
         // Near-edge values
-        [1, 0, 0],     // 1*257 = 257
+        [1, 0, 0],       // 1*257 = 257
         [254, 255, 255], // 254*257=65278
     ];
 
@@ -120,11 +120,9 @@ fn rgb_to_apple_batch_edge_cases() {
         ([254, 255, 255], [65278.0, 65535.0, 65535.0]),
     ];
 
-    for (_idx, ((expected_input, expected_output), (simd_val, scalar_val))) in
-        expected_values
-            .iter()
-            .zip(simd_result.iter().zip(scalar.iter()))
-            .enumerate()
+    for ((expected_input, expected_output), (simd_val, scalar_val)) in expected_values
+        .iter()
+        .zip(simd_result.iter().zip(scalar.iter()))
     {
         let _f32_check: [f32; 3] = *simd_val;
 
@@ -136,7 +134,9 @@ fn rgb_to_apple_batch_edge_cases() {
             assert!(
                 diff <= APPLE_TOLERANCE,
                 "pixel [{},{},{}] chan {chan_name}({chan}): simd(f32)={} scalar(f64)={} diff={:.2e} > tol={:.2e}",
-                expected_input[0], expected_input[1], expected_input[2],
+                expected_input[0],
+                expected_input[1],
+                expected_input[2],
                 simd_val[chan],
                 scalar_val[chan],
                 diff,
@@ -145,7 +145,9 @@ fn rgb_to_apple_batch_edge_cases() {
             assert!(
                 expected_diff <= APPLE_TOLERANCE,
                 "pixel [{},{},{}] chan {chan_name}({chan}): simd(f32)={} expected={} diff={:.2e} > tol={:.2e}",
-                expected_input[0], expected_input[1], expected_input[2],
+                expected_input[0],
+                expected_input[1],
+                expected_input[2],
                 simd_val[chan],
                 expected_output[chan],
                 expected_diff,
