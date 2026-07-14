@@ -8,7 +8,11 @@
 //!
 //! f32 (~7 decimal digits) vs f64 (~15 decimal digits) through three
 //! transcendental steps (powf 2.4 + cbrt³) yields a detectable gap.
-//! Absolute tolerance per channel: **2e-3**.
+//! Absolute tolerance per channel: **1e-3** (matching LAB_TOLERANCE).
+//!
+//! ## Reference
+//!
+//! Ported from `convert.rgb.oklab` in color-convert@3.1.3 `conversions.js`.
 //!
 //! ## Batch API
 //!
