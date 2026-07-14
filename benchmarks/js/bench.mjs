@@ -120,7 +120,7 @@ function makeRecord(bestNs, route) {
     // Required fields (see benchmarks/SCHEMA.md)
     ts: new Date().toISOString(),
     commit,
-    issue: 18,
+    issue: parseInt(process.env.BENCH_ISSUE || '18', 10),
     route,
     tier: 'js',
     input_size: N,
