@@ -264,6 +264,21 @@ fn rgb_hsl_rgb_scalar(pixel: &[u8; 3]) {
     let _ = hsl::rgb(h);
 }
 
+fn rgb_hsl_rgb_scalar_batch(pixels: &[[u8; 3]]) -> Vec<[f64; 3]> {
+    pixels
+        .iter()
+        .map(|&p| {
+            let h = rgb::hsl(p);
+            hsl::rgb(h)
+        })
+        .collect()
+}
+
+fn rgb_hsl_rgb_simd(pixels: &[[u8; 3]]) -> Vec<[f32; 3]> {
+    let hsl_batch = simd_hsl::rgb_to_hsl_batch(pixels);
+    simd_hsl::hsl_to_rgb_batch(&hsl_batch)
+}
+
 // ── Main ────────────────────────────────────────────────────────────────
 fn main() {
     let args: Vec<String> = std::env::args().collect();
@@ -429,13 +444,62 @@ fn main() {
         "rgb->hsl (SIMD)", n, hsl_simd_ms, hsl_simd_mps
     );
 
-    // rgb→hsl→rgb (scalar per-pixel)
-    let hslrgb_ms = bench_per_pixel(&pixels, warmup_iters, timed_iters, rgb_hsl_rgb_scalar);
-    let hslrgb_mps = (n as f64 / 1e6) / (hslrgb_ms / 1000.0);
+    // rgb→hsl→rgb (scalar batch baseline)
+    let hslrgb_scalar_ms =
+        bench_batch(&pixels, warmup_iters, timed_iters, rgb_hsl_rgb_scalar_batch);
+    let hslrgb_scalar_mps = (n as f64 / 1e6) / (hslrgb_scalar_ms / 1000.0);
+    append_record(
+        &ctx,
+        RecordParams {
+            route: "rgb->hsl->rgb",
+            best_ms: hslrgb_scalar_ms,
+            n,
+            iters: timed_iters,
+            warmup: warmup_iters,
+            decision: "baseline",
+            notes: &format!(
+                "Rust scalar batch baseline (pre-SIMD roundtrip), N={}",
+                format_number(n)
+            ),
+            baseline_ref: None,
+        },
+    );
     println!(
         "{:<18}  N={:>8}  best={:>9.3} ms  {:>10.1} MP/s  [scalar]",
-        "rgb->hsl->rgb", n, hslrgb_ms, hslrgb_mps
+        "rgb->hsl->rgb (sc)", n, hslrgb_scalar_ms, hslrgb_scalar_mps
     );
 
-    println!("\nAppended 5 records to {}", RESULTS_PATH);
+    // rgb→hsl→rgb (SIMD batch round-trip)
+    let hslrgb_simd_ms = bench_batch(&pixels, warmup_iters, timed_iters, rgb_hsl_rgb_simd);
+    let hslrgb_simd_mps = (n as f64 / 1e6) / (hslrgb_simd_ms / 1000.0);
+    append_record(
+        &ctx,
+        RecordParams {
+            route: "rgb->hsl->rgb",
+            best_ms: hslrgb_simd_ms,
+            n,
+            iters: timed_iters,
+            warmup: warmup_iters,
+            decision: "kept",
+            notes: &format!(
+                "wide::f32x8 SIMD batch round-trip (rgb→hsl→rgb), N={}",
+                format_number(n)
+            ),
+            baseline_ref: Some(&ctx.commit),
+        },
+    );
+    println!(
+        "{:<18}  N={:>8}  best={:>9.3} ms  {:>10.1} MP/s  [SIMD]",
+        "rgb->hsl->rgb (SIMD)", n, hslrgb_simd_ms, hslrgb_simd_mps
+    );
+
+    // rgb→hsl→rgb (scalar per-pixel, for reference)
+    let hslrgb_pp_ms = bench_per_pixel(&pixels, warmup_iters, timed_iters, rgb_hsl_rgb_scalar);
+    let hslrgb_pp_mps = (n as f64 / 1e6) / (hslrgb_pp_ms / 1000.0);
+    println!(
+        "{:<18}  N={:>8}  best={:>9.3} ms  {:>10.1} MP/s  [scalar pp]",
+        "rgb->hsl->rgb (pp)", n, hslrgb_pp_ms, hslrgb_pp_mps
+    );
+
+    println!("\nAppended 7 records to {}", RESULTS_PATH);
 }
