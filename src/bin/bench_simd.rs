@@ -182,6 +182,7 @@ struct RecordParams<'a> {
     warmup: usize,
     decision: &'a str,
     notes: &'a str,
+    baseline_ref: Option<&'a str>,
 }
 
 fn append_record(ctx: &BenchCtx, p: RecordParams<'_>) {
@@ -195,14 +196,22 @@ fn append_record(ctx: &BenchCtx, p: RecordParams<'_>) {
     let escaped_notes = p.notes.replace('\\', "\\\\").replace('"', "\\\"");
     let escaped_decision = p.decision.replace('\\', "\\\\").replace('"', "\\\"");
 
+    let baseline_ref_json = match p.baseline_ref {
+        Some(r) => {
+            let escaped = r.replace('\\', "\\\\").replace('"', "\\\"");
+            format!(r#","baseline_ref":"{escaped}""#)
+        }
+        None => String::new(),
+    };
+
     let record = format!(
         concat!(
             r#"{{"ts":"{ts}","commit":"{commit}","issue":{issue},"#,
             r#""route":"{route}","tier":"cpu","input_size":{n},"#,
             r#""metric":"throughput_mpx_s","value":{mps:.2},"ms":{ms:.3},"#,
             r#""iters":{iters},"warmup":{warmup},"host":"{host}","#,
-            r#""gpu_present":{gp},"decision":"{decision}","#,
-            r#""notes":"{notes}"}}"#,
+            r#""gpu_present":{gp},"decision":"{decision}""#,
+            r#"{baseline_ref},"notes":"{notes}"}}"#,
         ),
         ts = ts,
         commit = ctx.commit,
@@ -216,6 +225,7 @@ fn append_record(ctx: &BenchCtx, p: RecordParams<'_>) {
         host = ctx.host,
         gp = ctx.gpu_present,
         decision = escaped_decision,
+        baseline_ref = baseline_ref_json,
         notes = escaped_notes,
     );
 
@@ -235,6 +245,10 @@ fn rgb_to_xyz_simd(pixels: &[[u8; 3]]) -> Vec<[f32; 3]> {
 fn rgb_to_lab_simd(pixels: &[[u8; 3]]) -> Vec<[f32; 3]> {
     let xyz_batch = simd::rgb_to_xyz_batch(pixels);
     simd::xyz_to_lab_batch(&xyz_batch)
+}
+
+fn rgb_to_lab_fused(pixels: &[[u8; 3]]) -> Vec<[f32; 3]> {
+    simd::rgb_to_lab_batch(pixels)
 }
 
 fn rgb_to_hsl_scalar_batch(pixels: &[[u8; 3]]) -> Vec<[f64; 3]> {
@@ -309,6 +323,7 @@ fn main() {
             warmup: warmup_iters,
             decision: "baseline",
             notes: &format!("wide::f64x4 SIMD batch, N={}", format_number(n)),
+            baseline_ref: None,
         },
     );
     println!(
@@ -329,14 +344,39 @@ fn main() {
             warmup: warmup_iters,
             decision: "baseline",
             notes: &format!(
-                "wide::f64x4 SIMD batch (xyz→lab chain), N={}",
+                "wide::f32x8 SIMD two-step chain (xyz→lab), #61 baseline, N={}",
                 format_number(n)
             ),
+            baseline_ref: None,
         },
     );
     println!(
-        "{:<18}  N={:>8}  best={:>9.3} ms  {:>10.1} MP/s  [SIMD]",
+        "{:<18}  N={:>8}  best={:>9.3} ms  {:>10.1} MP/s  [SIMD two-step]",
         "rgb->lab", n, lab_ms, lab_mps
+    );
+
+    // rgb→lab (SIMD: fused single-pass rgb→xyz→lab, no intermediate XYZ buffer)
+    let lab_fused_ms = bench_batch(&pixels, warmup_iters, timed_iters, rgb_to_lab_fused);
+    let lab_fused_mps = (n as f64 / 1e6) / (lab_fused_ms / 1000.0);
+    append_record(
+        &ctx,
+        RecordParams {
+            route: "rgb->lab",
+            best_ms: lab_fused_ms,
+            n,
+            iters: timed_iters,
+            warmup: warmup_iters,
+            decision: "kept",
+            notes: &format!(
+                "wide::f32x8 SIMD fused single-pass (rgb→lab), N={}",
+                format_number(n)
+            ),
+            baseline_ref: Some(&ctx.commit),
+        },
+    );
+    println!(
+        "{:<18}  N={:>8}  best={:>9.3} ms  {:>10.1} MP/s  [SIMD fused]",
+        "rgb->lab (fused)", n, lab_fused_ms, lab_fused_mps
     );
 
     // ── Scalar routes (for reference) + SIMD HSL ──────────────────────
@@ -357,6 +397,7 @@ fn main() {
                 "Rust scalar batch baseline (pre-SIMD), N={}",
                 format_number(n)
             ),
+            baseline_ref: None,
         },
     );
     println!(
@@ -380,6 +421,7 @@ fn main() {
                 "wide::f32x8 SIMD batch (mask-blend hue), N={}",
                 format_number(n)
             ),
+            baseline_ref: None,
         },
     );
     println!(
@@ -395,5 +437,5 @@ fn main() {
         "rgb->hsl->rgb", n, hslrgb_ms, hslrgb_mps
     );
 
-    println!("\nAppended 4 records to {}", RESULTS_PATH);
+    println!("\nAppended 5 records to {}", RESULTS_PATH);
 }
