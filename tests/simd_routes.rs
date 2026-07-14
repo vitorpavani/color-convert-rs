@@ -1,20 +1,29 @@
-//! SIMD batch-route correctness tests (issue #20).
+//! SIMD batch-route correctness tests (issue #20 → #51).
 //!
 //! Each test generates a deterministic pixel batch, computes the scalar
-//! reference result per pixel, then calls the SIMD batch function and
-//! asserts every lane matches the scalar output exactly (tolerance 0.0,
-//! because each SIMD lane performs the same sequence of IEEE 754 f64 ops
-//! as the scalar route on the same pixel).
+//! f64 reference result per pixel, then calls the SIMD batch function
+//! (now `wide::f32x8`, producing f32 output) and asserts every lane
+//! matches the scalar output within a documented absolute tolerance.
 //!
-//! Tolerance: 0.0 (bit-identical). If simd and scalar disagree, the simd
-//! implementation is buggy — see `src/simd.rs` module doc.
+//! ## Tolerance (f32 vs f64)
+//!
+//! f32 has ~7 decimal digits of precision vs f64's ~15. The sRGB gamma
+//! expansion (powf 2.4) and CIE LAB transfer (cbrt) amplify rounding
+//! differences.  The tolerances below are chosen to catch real algorithmic
+//! bugs (wrong matrix coefficient, wrong branch) while accepting the
+//! inherent f32→f64 gap.
+//!
+//! - rgb→xyz: 5e-4 absolute per channel (XYZ ∈ [0, 100], f32 ulp ≈ 1e-6)
+//! - xyz→lab: 1e-3 absolute per channel (L ∈ [0, 100], a,b ∈ [-100, 100])
 
 use color_convert_rs::rgb;
 use color_convert_rs::simd;
 use color_convert_rs::xyz;
 
+const XYZ_TOLERANCE: f64 = 5e-4;
+const LAB_TOLERANCE: f64 = 1e-3;
+
 // ── Deterministic PRNG (mulberry32, seed=42) ─────────────────────────
-// Mirrors benchmarks/js/bench.mjs for reproducible input generation.
 fn mulberry32(state: &mut u32) -> f64 {
     *state = state.wrapping_add(0x6d2b79f5);
     let mut t = *state;
@@ -36,13 +45,12 @@ fn generate_rgb_pixels(n: usize) -> Vec<[u8; 3]> {
     pixels
 }
 
-/// Behavior 1: `rgb_to_xyz_batch` must produce bit-identical results to
-/// calling `rgb::xyz` on each pixel in the batch, for batches of various
-/// sizes including non-multiples of the SIMD lane width (4).
+/// Behavior 1: `rgb_to_xyz_batch` (f32x8 SIMD) must match the scalar
+/// `rgb::xyz` (f64) within XYZ_TOLERANCE (5e-4) for batches including
+/// non-multiples of the SIMD lane width (8).
 #[test]
 fn rgb_to_xyz_batch_matches_scalar() {
-    // Test multiple batch sizes to exercise remainder paths
-    for n in [1, 3, 4, 7, 8, 15, 16, 100, 257] {
+    for n in [1, 3, 7, 8, 15, 16, 100, 257] {
         let pixels = generate_rgb_pixels(n);
         let scalar: Vec<[f64; 3]> = pixels.iter().map(|&p| rgb::xyz(p)).collect();
         let simd_result = simd::rgb_to_xyz_batch(&pixels);
@@ -54,30 +62,41 @@ fn rgb_to_xyz_batch_matches_scalar() {
         );
 
         for (i, (simd_val, scalar_val)) in simd_result.iter().zip(scalar.iter()).enumerate() {
+            // Compile-time type check: simd_val MUST be [f32; 3], not [f64; 3].
+            // This FAILS to compile while simd::rgb_to_xyz_batch returns Vec<[f64; 3]>.
+            let _f32_check: [f32; 3] = *simd_val;
+
             for chan in 0..3 {
+                let diff = (simd_val[chan] as f64 - scalar_val[chan]).abs();
                 assert!(
-                    (simd_val[chan] - scalar_val[chan]).abs() <= 0.0,
-                    "pixel {i} channel {chan}: simd={} scalar={} diff={}",
+                    diff <= XYZ_TOLERANCE,
+                    "pixel {i} channel {chan}: simd(f32)={} scalar(f64)={} diff={:.2e} > tol={:.2e}",
                     simd_val[chan],
                     scalar_val[chan],
-                    (simd_val[chan] - scalar_val[chan]).abs()
+                    diff,
+                    XYZ_TOLERANCE,
                 );
             }
         }
     }
 }
 
-/// Behavior 2: `xyz_to_lab_batch` must produce bit-identical results to
-/// calling `xyz::lab` on each pixel in the batch. XYZ inputs are generated
+/// Behavior 2: `xyz_to_lab_batch` (f32x8 SIMD) must match the scalar
+/// `xyz::lab` (f64) within LAB_TOLERANCE (1e-3). XYZ inputs are generated
 /// from the deterministic RGB batch via `rgb::xyz` to exercise the full
-/// piecewise LAB transfer (cbrt and linear branches).
+/// piecewise LAB transfer.
 #[test]
 fn xyz_to_lab_batch_matches_scalar() {
-    for n in [1, 3, 4, 7, 8, 15, 16, 100, 257] {
+    for n in [1, 3, 7, 8, 15, 16, 100, 257] {
         let rgb_pixels = generate_rgb_pixels(n);
-        let xyz_pixels: Vec<[f64; 3]> = rgb_pixels.iter().map(|&p| rgb::xyz(p)).collect();
-        let scalar: Vec<[f64; 3]> = xyz_pixels.iter().map(|&p| xyz::lab(p)).collect();
-        let simd_result = simd::xyz_to_lab_batch(&xyz_pixels);
+        // Generate f32 XYZ via the SIMD batch (the function under test for batch #1)
+        let xyz_simd = simd::rgb_to_xyz_batch(&rgb_pixels);
+        let scalar: Vec<[f64; 3]> = xyz_simd
+            .iter()
+            .map(|p| [f64::from(p[0]), f64::from(p[1]), f64::from(p[2])])
+            .map(|p| xyz::lab(p))
+            .collect();
+        let simd_result = simd::xyz_to_lab_batch(&xyz_simd);
 
         assert_eq!(
             simd_result.len(),
@@ -86,13 +105,17 @@ fn xyz_to_lab_batch_matches_scalar() {
         );
 
         for (i, (simd_val, scalar_val)) in simd_result.iter().zip(scalar.iter()).enumerate() {
+            let _f32_check: [f32; 3] = *simd_val;
+
             for chan in 0..3 {
+                let diff = (simd_val[chan] as f64 - scalar_val[chan]).abs();
                 assert!(
-                    (simd_val[chan] - scalar_val[chan]).abs() <= 0.0,
-                    "pixel {i} channel {chan}: simd={} scalar={} diff={}",
+                    diff <= LAB_TOLERANCE,
+                    "pixel {i} channel {chan}: simd(f32)={} scalar(f64)={} diff={:.2e} > tol={:.2e}",
                     simd_val[chan],
                     scalar_val[chan],
-                    (simd_val[chan] - scalar_val[chan]).abs()
+                    diff,
+                    LAB_TOLERANCE,
                 );
             }
         }

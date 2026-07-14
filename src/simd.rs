@@ -1,11 +1,10 @@
 //! CPU-SIMD batch conversion routes for hot matrix-heavy paths.
 //!
-//! Uses the [`wide`] crate for portable explicit SIMD (f64x4 lanes) to
-//! process 4 pixels at once. The matrix multiply and linear combination
+//! Uses the [`wide`] crate for portable explicit SIMD (f32x8 lanes) to
+//! process 8 pixels at once. The matrix multiply and linear combination
 //! parts are SIMD-accelerated; piecewise nonlinear transforms (sRGB gamma,
 //! LAB cube-root transfer) extract individual lanes, call the scalar
-//! reference functions, and re-pack — matching the scalar output exactly
-//! because every `f64` lane is an independent IEEE 754 computation.
+//! reference functions, and re-pack.
 //!
 //! ## Routes covered
 //!
@@ -14,110 +13,156 @@
 //!
 //! ## Tolerance
 //!
-//! Each SIMD lane performs the same sequence of `f64` operations as the
-//! scalar route on the same pixel, so outputs must be **bit-identical** to
-//! calling the scalar function (tolerance 0.0). Documented here for
-//! clarity: if a test ever observes a nonzero diff, that is a bug.
+//! Each SIMD lane performs the same sequence of `f32` operations as the
+//! scalar `f64` route would on the same pixel. f32 has ~7 decimal digits
+//! of precision vs f64's ~15, so outputs differ by a small epsilon:
+//!
+//! * `rgb→xyz`: absolute tolerance ≤ 5e-4 per channel
+//! * `xyz→lab`: absolute tolerance ≤ 1e-3 per channel
+//!
+//! These tolerances are wide enough to accept the f32/f64 gap but narrow
+//! enough to catch real bugs (wrong coefficient, wrong branch condition).
+//! See `tests/simd_routes.rs`.
 //!
 //! ## Batch API
 //!
-//! Batch functions accept slices of pixel triples and return `Vec<[f64;3]>`,
-//! processing 4 pixels at a time via `wide::f64x4` with scalar remainder
-//! fallback for the final 0–3 pixels.
+//! Batch functions accept slices of pixel triples and return `Vec<[f32;3]>`,
+//! processing 8 pixels at a time via `wide::f32x8` with scalar remainder
+//! fallback for the final 0–7 pixels.
+
+/// sRGB inverse nonlinear transform — f32 version.
+#[inline]
+fn srgb_inv_f32(c: f32) -> f32 {
+    if c > 0.04045 {
+        ((c + 0.055) / 1.055).powf(2.4)
+    } else {
+        c / 12.92
+    }
+}
+
+/// CIE LAB transfer function — f32 version.
+#[inline]
+fn lab_transfer_f32(t: f32) -> f32 {
+    let ft = (6.0_f32 / 29.0).powi(3);
+    if t > ft {
+        t.cbrt()
+    } else {
+        7.787 * t + 16.0 / 116.0
+    }
+}
 
 /// Process a batch of RGB pixels into XYZ via sRGB inverse gamma + matrix.
 ///
-/// Processes 4 pixels at a time using `f64x4` SIMD lanes for the matrix
+/// Processes 8 pixels at a time using `f32x8` SIMD lanes for the matrix
 /// multiply; extracts lanes for the scalar piecewise gamma function and
-/// re-packs. Remainder pixels (final 0–3) fall back to the scalar
-/// [`crate::rgb::xyz`].
-///
-/// # Panics
-///
-/// Does not panic — every `[u8;3]` is a valid RGB triple.
-pub fn rgb_to_xyz_batch(rgb: &[[u8; 3]]) -> Vec<[f64; 3]> {
-    use wide::f64x4;
+/// re-packs. Remainder pixels (final 0–7) fall back to the scalar
+/// [`crate::rgb::xyz`], converting its f64 output to f32.
+pub fn rgb_to_xyz_batch(rgb: &[[u8; 3]]) -> Vec<[f32; 3]> {
+    use wide::f32x8;
 
     let n = rgb.len();
     let mut result = Vec::with_capacity(n);
     let mut i = 0;
 
-    // Process 4 pixels at a time via f64x4 lanes.
-    // Each lane is an independent pixel's channel; the SIMD ops (mul, add)
-    // are the same IEEE 754 f64 operations the scalar route would perform,
-    // so the result is bit-identical.
-    while i + 3 < n {
-        let r = f64x4::new([
-            f64::from(rgb[i][0]),
-            f64::from(rgb[i + 1][0]),
-            f64::from(rgb[i + 2][0]),
-            f64::from(rgb[i + 3][0]),
+    while i + 7 < n {
+        let r = f32x8::new([
+            rgb[i][0] as f32,
+            rgb[i + 1][0] as f32,
+            rgb[i + 2][0] as f32,
+            rgb[i + 3][0] as f32,
+            rgb[i + 4][0] as f32,
+            rgb[i + 5][0] as f32,
+            rgb[i + 6][0] as f32,
+            rgb[i + 7][0] as f32,
         ]);
-        let g = f64x4::new([
-            f64::from(rgb[i][1]),
-            f64::from(rgb[i + 1][1]),
-            f64::from(rgb[i + 2][1]),
-            f64::from(rgb[i + 3][1]),
+        let g = f32x8::new([
+            rgb[i][1] as f32,
+            rgb[i + 1][1] as f32,
+            rgb[i + 2][1] as f32,
+            rgb[i + 3][1] as f32,
+            rgb[i + 4][1] as f32,
+            rgb[i + 5][1] as f32,
+            rgb[i + 6][1] as f32,
+            rgb[i + 7][1] as f32,
         ]);
-        let b = f64x4::new([
-            f64::from(rgb[i][2]),
-            f64::from(rgb[i + 1][2]),
-            f64::from(rgb[i + 2][2]),
-            f64::from(rgb[i + 3][2]),
+        let b = f32x8::new([
+            rgb[i][2] as f32,
+            rgb[i + 1][2] as f32,
+            rgb[i + 2][2] as f32,
+            rgb[i + 3][2] as f32,
+            rgb[i + 4][2] as f32,
+            rgb[i + 5][2] as f32,
+            rgb[i + 6][2] as f32,
+            rgb[i + 7][2] as f32,
         ]);
 
-        let r_norm = r / f64x4::splat(255.0);
-        let g_norm = g / f64x4::splat(255.0);
-        let b_norm = b / f64x4::splat(255.0);
+        let r_norm = r / f32x8::splat(255.0);
+        let g_norm = g / f32x8::splat(255.0);
+        let b_norm = b / f32x8::splat(255.0);
 
-        // Extract lanes for the piecewise sRGB gamma (scalar-only powf).
         let r_arr = r_norm.to_array();
         let g_arr = g_norm.to_array();
         let b_arr = b_norm.to_array();
-        let r_lin = f64x4::new([
-            crate::rgb::srgb_nonlinear_transform_inv(r_arr[0]),
-            crate::rgb::srgb_nonlinear_transform_inv(r_arr[1]),
-            crate::rgb::srgb_nonlinear_transform_inv(r_arr[2]),
-            crate::rgb::srgb_nonlinear_transform_inv(r_arr[3]),
+        let r_lin = f32x8::new([
+            srgb_inv_f32(r_arr[0]),
+            srgb_inv_f32(r_arr[1]),
+            srgb_inv_f32(r_arr[2]),
+            srgb_inv_f32(r_arr[3]),
+            srgb_inv_f32(r_arr[4]),
+            srgb_inv_f32(r_arr[5]),
+            srgb_inv_f32(r_arr[6]),
+            srgb_inv_f32(r_arr[7]),
         ]);
-        let g_lin = f64x4::new([
-            crate::rgb::srgb_nonlinear_transform_inv(g_arr[0]),
-            crate::rgb::srgb_nonlinear_transform_inv(g_arr[1]),
-            crate::rgb::srgb_nonlinear_transform_inv(g_arr[2]),
-            crate::rgb::srgb_nonlinear_transform_inv(g_arr[3]),
+        let g_lin = f32x8::new([
+            srgb_inv_f32(g_arr[0]),
+            srgb_inv_f32(g_arr[1]),
+            srgb_inv_f32(g_arr[2]),
+            srgb_inv_f32(g_arr[3]),
+            srgb_inv_f32(g_arr[4]),
+            srgb_inv_f32(g_arr[5]),
+            srgb_inv_f32(g_arr[6]),
+            srgb_inv_f32(g_arr[7]),
         ]);
-        let b_lin = f64x4::new([
-            crate::rgb::srgb_nonlinear_transform_inv(b_arr[0]),
-            crate::rgb::srgb_nonlinear_transform_inv(b_arr[1]),
-            crate::rgb::srgb_nonlinear_transform_inv(b_arr[2]),
-            crate::rgb::srgb_nonlinear_transform_inv(b_arr[3]),
+        let b_lin = f32x8::new([
+            srgb_inv_f32(b_arr[0]),
+            srgb_inv_f32(b_arr[1]),
+            srgb_inv_f32(b_arr[2]),
+            srgb_inv_f32(b_arr[3]),
+            srgb_inv_f32(b_arr[4]),
+            srgb_inv_f32(b_arr[5]),
+            srgb_inv_f32(b_arr[6]),
+            srgb_inv_f32(b_arr[7]),
         ]);
 
-        // sRGB→XYZ (D65) matrix multiply — 9 mul + 6 add per pixel, SIMD.
-        let x = r_lin * f64x4::splat(0.4124564)
-            + g_lin * f64x4::splat(0.3575761)
-            + b_lin * f64x4::splat(0.1804375);
-        let y = r_lin * f64x4::splat(0.2126729)
-            + g_lin * f64x4::splat(0.7151522)
-            + b_lin * f64x4::splat(0.0721750);
-        let z = r_lin * f64x4::splat(0.0193339)
-            + g_lin * f64x4::splat(0.1191920)
-            + b_lin * f64x4::splat(0.9503041);
+        let x = r_lin * f32x8::splat(0.4124564)
+            + g_lin * f32x8::splat(0.3575761)
+            + b_lin * f32x8::splat(0.1804375);
+        let y = r_lin * f32x8::splat(0.2126729)
+            + g_lin * f32x8::splat(0.7151522)
+            + b_lin * f32x8::splat(0.0721750);
+        let z = r_lin * f32x8::splat(0.0193339)
+            + g_lin * f32x8::splat(0.119_192)
+            + b_lin * f32x8::splat(0.9503041);
 
         let x_arr = x.to_array();
         let y_arr = y.to_array();
         let z_arr = z.to_array();
 
-        for j in 0..4 {
+        for j in 0..8 {
             result.push([x_arr[j] * 100.0, y_arr[j] * 100.0, z_arr[j] * 100.0]);
         }
 
-        i += 4;
+        i += 8;
     }
 
-    // Scalar remainder for the final 0–3 pixels.
+    // Scalar remainder — delegate to f64 scalar, convert to f32.
     while i < n {
-        result.push(crate::rgb::xyz(rgb[i]));
+        let f64_result = crate::rgb::xyz(rgb[i]);
+        result.push([
+            f64_result[0] as f32,
+            f64_result[1] as f32,
+            f64_result[2] as f32,
+        ]);
         i += 1;
     }
 
@@ -126,77 +171,115 @@ pub fn rgb_to_xyz_batch(rgb: &[[u8; 3]]) -> Vec<[f64; 3]> {
 
 /// Process a batch of XYZ pixels into CIE L*a*b* via D65 normalization + transfer.
 ///
-/// Processes 4 pixels at a time using `f64x4` SIMD lanes for the linear
+/// Processes 8 pixels at a time using `f32x8` SIMD lanes for the linear
 /// combination (L, a, b formulas); extracts lanes for the scalar piecewise
-/// LAB transfer function (cbrt / linear) and re-packs. Remainder pixels
-/// fall back to the scalar [`crate::xyz::lab`].
-///
-/// # Panics
-///
-/// Does not panic — every `[f64;3]` is a valid XYZ triple.
-pub fn xyz_to_lab_batch(xyz: &[[f64; 3]]) -> Vec<[f64; 3]> {
-    use wide::f64x4;
+/// LAB transfer function and re-packs. Remainder pixels fall back to the
+/// scalar [`crate::xyz::lab`], converting its f64 output to f32.
+pub fn xyz_to_lab_batch(xyz: &[[f32; 3]]) -> Vec<[f32; 3]> {
+    use wide::f32x8;
 
     let n = xyz.len();
     let mut result = Vec::with_capacity(n);
     let mut i = 0;
 
-    // D65 reference white-point divisors (CIE 1931 2° observer)
-    let xn = f64x4::splat(95.047);
-    let yn = f64x4::splat(100.0);
-    let zn = f64x4::splat(108.883);
+    let xn = f32x8::splat(95.047);
+    let yn = f32x8::splat(100.0);
+    let zn = f32x8::splat(108.883);
 
-    while i + 3 < n {
-        let x = f64x4::new([xyz[i][0], xyz[i + 1][0], xyz[i + 2][0], xyz[i + 3][0]]);
-        let y = f64x4::new([xyz[i][1], xyz[i + 1][1], xyz[i + 2][1], xyz[i + 3][1]]);
-        let z = f64x4::new([xyz[i][2], xyz[i + 1][2], xyz[i + 2][2], xyz[i + 3][2]]);
+    while i + 7 < n {
+        let x = f32x8::new([
+            xyz[i][0],
+            xyz[i + 1][0],
+            xyz[i + 2][0],
+            xyz[i + 3][0],
+            xyz[i + 4][0],
+            xyz[i + 5][0],
+            xyz[i + 6][0],
+            xyz[i + 7][0],
+        ]);
+        let y = f32x8::new([
+            xyz[i][1],
+            xyz[i + 1][1],
+            xyz[i + 2][1],
+            xyz[i + 3][1],
+            xyz[i + 4][1],
+            xyz[i + 5][1],
+            xyz[i + 6][1],
+            xyz[i + 7][1],
+        ]);
+        let z = f32x8::new([
+            xyz[i][2],
+            xyz[i + 1][2],
+            xyz[i + 2][2],
+            xyz[i + 3][2],
+            xyz[i + 4][2],
+            xyz[i + 5][2],
+            xyz[i + 6][2],
+            xyz[i + 7][2],
+        ]);
 
         let x_norm = x / xn;
         let y_norm = y / yn;
         let z_norm = z / zn;
 
-        // Extract lanes for the piecewise LAB transfer (scalar cbrt).
         let x_arr = x_norm.to_array();
         let y_arr = y_norm.to_array();
         let z_arr = z_norm.to_array();
-        let fx = f64x4::new([
-            crate::xyz::lab_transfer(x_arr[0]),
-            crate::xyz::lab_transfer(x_arr[1]),
-            crate::xyz::lab_transfer(x_arr[2]),
-            crate::xyz::lab_transfer(x_arr[3]),
+        let fx = f32x8::new([
+            lab_transfer_f32(x_arr[0]),
+            lab_transfer_f32(x_arr[1]),
+            lab_transfer_f32(x_arr[2]),
+            lab_transfer_f32(x_arr[3]),
+            lab_transfer_f32(x_arr[4]),
+            lab_transfer_f32(x_arr[5]),
+            lab_transfer_f32(x_arr[6]),
+            lab_transfer_f32(x_arr[7]),
         ]);
-        let fy = f64x4::new([
-            crate::xyz::lab_transfer(y_arr[0]),
-            crate::xyz::lab_transfer(y_arr[1]),
-            crate::xyz::lab_transfer(y_arr[2]),
-            crate::xyz::lab_transfer(y_arr[3]),
+        let fy = f32x8::new([
+            lab_transfer_f32(y_arr[0]),
+            lab_transfer_f32(y_arr[1]),
+            lab_transfer_f32(y_arr[2]),
+            lab_transfer_f32(y_arr[3]),
+            lab_transfer_f32(y_arr[4]),
+            lab_transfer_f32(y_arr[5]),
+            lab_transfer_f32(y_arr[6]),
+            lab_transfer_f32(y_arr[7]),
         ]);
-        let fz = f64x4::new([
-            crate::xyz::lab_transfer(z_arr[0]),
-            crate::xyz::lab_transfer(z_arr[1]),
-            crate::xyz::lab_transfer(z_arr[2]),
-            crate::xyz::lab_transfer(z_arr[3]),
+        let fz = f32x8::new([
+            lab_transfer_f32(z_arr[0]),
+            lab_transfer_f32(z_arr[1]),
+            lab_transfer_f32(z_arr[2]),
+            lab_transfer_f32(z_arr[3]),
+            lab_transfer_f32(z_arr[4]),
+            lab_transfer_f32(z_arr[5]),
+            lab_transfer_f32(z_arr[6]),
+            lab_transfer_f32(z_arr[7]),
         ]);
 
-        // CIE L*a*b* linear combination — SIMD
-        let l = fy * f64x4::splat(116.0) - f64x4::splat(16.0);
-        let a = (fx - fy) * f64x4::splat(500.0);
-        let b = (fy - fz) * f64x4::splat(200.0);
+        let l = fy * f32x8::splat(116.0) - f32x8::splat(16.0);
+        let a = (fx - fy) * f32x8::splat(500.0);
+        let b = (fy - fz) * f32x8::splat(200.0);
 
         let l_arr = l.to_array();
         let a_arr = a.to_array();
         let b_arr = b.to_array();
 
-        for j in 0..4 {
+        for j in 0..8 {
             result.push([l_arr[j], a_arr[j], b_arr[j]]);
         }
 
-        i += 4;
+        i += 8;
     }
 
-    // Scalar remainder for the final 0–3 pixels.
+    // Scalar remainder — delegate to f64 scalar, convert to f32.
     while i < n {
-        result.push(crate::xyz::lab(xyz[i]));
+        let f64_input = [xyz[i][0] as f64, xyz[i][1] as f64, xyz[i][2] as f64];
+        let f64_result = crate::xyz::lab(f64_input);
+        result.push([
+            f64_result[0] as f32,
+            f64_result[1] as f32,
+            f64_result[2] as f32,
+        ]);
         i += 1;
     }
 
