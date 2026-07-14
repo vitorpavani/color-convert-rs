@@ -14,7 +14,7 @@ measured run (a single tier, route, and input size). Never rewrite existing line
 | `route` | string | ✅ | Conversion route, e.g. `rgb->hsl`, `lab->rgb` |
 | `tier` | string enum | ✅ | One of `js` \| `cpu` \| `gpu` |
 | `input_size` | integer | ✅ | Number of elements/pixels processed in the timed run |
-| `metric` | string enum | ✅ | Metric name, e.g. `throughput_mpx_s` \| `ms_per_run` \| `ns_per_op` |
+| `metric` | string enum | ✅ | Metric name: `throughput_mpx_s` \| `ms_per_run` \| `ns_per_op` \| `errata` (for ledger correction records only) |
 | `value` | number | ✅ | The metric value (higher-is-better for throughput; lower-is-better for latency) |
 | `ms` | number | ✅ | Best-of-N wall time in milliseconds for the timed run |
 | `iters` | integer | ✅ | N (timed iterations after warm-up) |
@@ -23,7 +23,7 @@ measured run (a single tier, route, and input size). Never rewrite existing line
 | `gpu_present` | boolean | ✅ | Whether a physical GPU was detected by the runtime probe |
 | `gpu_name` | string | ⬜ | GPU/adapter name when `gpu_present` is true |
 | `baseline_ref` | string | ⬜ | For a `cpu`/`gpu` record: the commit of the previous Rust iteration it is compared against |
-| `decision` | string enum | ⬜ | `kept` \| `reverted` \| `baseline` — the keep-or-revert outcome for this change |
+| `decision` | string enum | ⬜ | `kept` \| `reverted` \| `baseline` \| `oom` — keep/revert outcome; `oom` marks a run that crashed with a value:0/ms:0/iters:0 sentinel and an explanatory note |
 | `notes` | string | ⬜ | Free text: what was tried, why kept/reverted, anomalies |
 
 ## Conventions
@@ -34,7 +34,9 @@ measured run (a single tier, route, and input size). Never rewrite existing line
   `host`**. Different hosts or sizes → different comparisons.
 - If `gpu_present` is `false`, no `gpu`-tier record is written for that run (only `js` and `cpu`).
 - `decision: "baseline"` marks the pre-change measurement; `kept`/`reverted` mark the post-change
-  outcome. This lets the rollup reconstruct the full experiment trail.
+  outcome. `decision: "oom"` marks a run that crashed (out-of-memory / GC wall) before producing
+  data: `value:0`, `ms:0`, `iters:0` with an explanatory note. OOM lines are excluded from
+  throughput comparisons and rollup calculations.
 
 ## Example lines
 
