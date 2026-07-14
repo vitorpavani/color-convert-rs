@@ -250,7 +250,20 @@ reduce total data in flight.
 > scalar batch**. No JS baseline is wired for rgb→cmyk yet; the keep decision is against the
 > previous Rust scalar iteration. `grep '"issue":72' results.jsonl`.
 
-### Cumulative self-improvement summary (waves 1–3)
+### rgb→hwb throughput (MP/s) — now CPU SIMD (#78)
+
+| Tier | @N=50M |
+|------|--------|
+| Rust scalar batch (issue=78 baseline) | 44.0 MP/s |
+| **Rust f32x8 SIMD (issue=78, decision=kept)** | **146.4 MP/s** |
+
+> Issue #78 added the first SIMD path for rgb→hwb via f32x8 mask-blend of the 3-way hue
+> branch (reusing the same hue as rgb→hsl since `hwb_f64` calls `hsl_f64(rgb)[0]`).
+> Whiteness = min×100, blackness = (1-max)×100 as straight-line f32x8 ops — **3.33× over
+> the scalar batch**. No JS baseline is wired for rgb→hwb yet; the keep decision is against
+> the previous Rust scalar iteration. `grep '"issue":78' results.jsonl`.
+
+### Cumulative self-improvement summary (waves 1–4)
 
 | Wave | Issue | Route | Δ | Decision |
 |------|-------|-------|---|----------|
@@ -262,7 +275,8 @@ reduce total data in flight.
 | 2 | #64 | rgb→hsl→rgb (round-trip) | 3.1× | ✅ kept |
 | 3 | #71 | rgb→hsv | 3.72× | ✅ kept |
 | 3 | #72 | rgb→cmyk | 2.04× | ✅ kept |
+| 4 | #78 | rgb→hwb | 3.33× | ✅ kept |
 
-**6 kept, 2 dropped** across 3 waves — every kept change beat both the JS baseline (where wired)
+**7 kept, 2 dropped** across 4 waves — every kept change beat both the JS baseline (where wired)
 and the previous Rust iteration; every dropped change is recorded as a negative result. See
 [`docs/ARCHITECTURE_REVIEW.md`](../docs/ARCHITECTURE_REVIEW.md) for the full review.
