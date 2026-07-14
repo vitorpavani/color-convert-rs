@@ -106,7 +106,7 @@ fn rgb_to_hcg_batch_achromatic_and_edge_cases() {
         [254, 255, 255], // near-white with hint — chroma=1/255≈0.004
         // Chroma==1 edge case (white has chroma=0, but test pure colors
         // where max=255, min=0): chroma=1.0
-        [255, 0, 64],  // mixed, max=255 min=0 → chroma=1.0, grayscale=0
+        [255, 0, 64], // mixed, max=255 min=0 → chroma=1.0, grayscale=0
     ];
 
     let scalar: Vec<[f64; 3]> = test_pixels.iter().map(|&p| rgb::hcg(p)).collect();

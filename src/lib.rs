@@ -26,6 +26,7 @@ pub mod probe;
 pub mod rgb;
 pub mod simd;
 pub mod simd_cmyk;
+pub mod simd_hcg;
 pub mod simd_hsl;
 pub mod simd_hsv;
 pub mod simd_hwb;
