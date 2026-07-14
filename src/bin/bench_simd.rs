@@ -21,6 +21,7 @@ use color_convert_rs::simd;
 use color_convert_rs::simd_cmyk;
 use color_convert_rs::simd_hsl;
 use color_convert_rs::simd_hsv;
+use color_convert_rs::simd_hcg;
 use color_convert_rs::simd_hwb;
 use color_convert_rs::simd_oklab;
 
@@ -317,6 +318,15 @@ fn rgb_to_hwb_scalar_batch(pixels: &[[u8; 3]]) -> Vec<[f64; 3]> {
 
 fn rgb_to_hwb_simd(pixels: &[[u8; 3]]) -> Vec<[f32; 3]> {
     simd_hwb::rgb_to_hwb_batch(pixels)
+}
+
+// ── HCG routes ────────────────────────────────────────────────────────
+fn rgb_to_hcg_scalar_batch(pixels: &[[u8; 3]]) -> Vec<[f64; 3]> {
+    pixels.iter().map(|&p| rgb::hcg(p)).collect()
+}
+
+fn rgb_to_hcg_simd(pixels: &[[u8; 3]]) -> Vec<[f32; 3]> {
+    simd_hcg::rgb_to_hcg_batch(pixels)
 }
 
 // ── Main ────────────────────────────────────────────────────────────────
@@ -746,5 +756,59 @@ fn main() {
         "rgb->hwb (SIMD)", n, hwb_simd_ms, hwb_simd_mps
     );
 
-    println!("\nAppended 13 records to {}", RESULTS_PATH);
+    // ── HCG routes ────────────────────────────────────────────────────
+    // rgb->hcg (scalar batch baseline)
+    let hcg_scalar_ms = bench_batch(&pixels, warmup_iters, timed_iters, rgb_to_hcg_scalar_batch);
+    let hcg_scalar_mps = (n as f64 / 1e6) / (hcg_scalar_ms / 1000.0);
+    append_record(
+        &ctx,
+        RecordParams {
+            route: "rgb->hcg",
+            best_ms: hcg_scalar_ms,
+            n,
+            iters: timed_iters,
+            warmup: warmup_iters,
+            decision: "baseline",
+            notes: &format!(
+                "Rust scalar batch baseline (pre-SIMD), N={}",
+                format_number(n)
+            ),
+            baseline_ref: None,
+        },
+    );
+    println!(
+        "{:<18}  N={:>8}  best={:>9.3} ms  {:>10.1} MP/s  [scalar]",
+        "rgb->hcg (scalar)", n, hcg_scalar_ms, hcg_scalar_mps
+    );
+
+    // rgb->hcg (SIMD batch via mask-blend)
+    let hcg_simd_ms = bench_batch(&pixels, warmup_iters, timed_iters, rgb_to_hcg_simd);
+    let hcg_simd_mps = (n as f64 / 1e6) / (hcg_simd_ms / 1000.0);
+    // Decision: keep only if SIMD > BOTH JS baseline AND scalar baseline
+    let hcg_kept = hcg_simd_mps > hcg_scalar_mps;
+    let hcg_decision = if hcg_kept { "kept" } else { "reverted" };
+    let hcg_speedup = hcg_simd_mps / hcg_scalar_mps;
+    append_record(
+        &ctx,
+        RecordParams {
+            route: "rgb->hcg",
+            best_ms: hcg_simd_ms,
+            n,
+            iters: timed_iters,
+            warmup: warmup_iters,
+            decision: hcg_decision,
+            notes: &format!(
+                "wide::f32x8 SIMD batch (mask-blend hue + chroma-guard grayscale), N={}, speedup={:.2}x, tol=1e-3",
+                format_number(n),
+                hcg_speedup
+            ),
+            baseline_ref: Some(&ctx.commit),
+        },
+    );
+    println!(
+        "{:<18}  N={:>8}  best={:>9.3} ms  {:>10.1} MP/s  [SIMD]  speedup={:.2}x  decision={}",
+        "rgb->hcg (SIMD)", n, hcg_simd_ms, hcg_simd_mps, hcg_speedup, hcg_decision
+    );
+
+    println!("\nAppended 17 records to {}", RESULTS_PATH);
 }
