@@ -225,3 +225,44 @@ reduce total data in flight.
 > Issue #65 vectorized the srgb inverse-gamma transfer across f32x8 (SIMD `powf` + mask-blend,
 > replacing scalar lane-by-lane calls) for a further **+21.2%** (37.5 → 46.3 MP/s) — now
 > ~4.3× faster than JS and **2.27× faster than f64x4 SIMD**.
+
+### rgb→hsv throughput (MP/s) — now CPU SIMD (#71)
+
+| Tier | @N=50M | vs JS |
+|------|--------|-------|
+| JS (issue=71) | 12.3 MP/s | 1.0× |
+| Rust scalar batch (issue=71 baseline) | 38.9 MP/s | 3.2× |
+| **Rust f32x8 SIMD (issue=71, decision=kept)** | **144.7 MP/s** | **11.8×** |
+
+> Issue #71 added the first SIMD path for rgb→hsv via f32x8 mask-blend of the 3-way hue
+> branch (min/max/delta, `v=max`, `s=delta/max`) — **3.72× over the scalar batch**, **11.8× over
+> JS**. `grep '"issue":71' results.jsonl`.
+
+### rgb→cmyk throughput (MP/s) — now CPU SIMD (#72)
+
+| Tier | @N=50M |
+|------|--------|
+| Rust scalar batch (issue=72 baseline) | 63.8 MP/s |
+| **Rust f32x8 SIMD (issue=72, decision=kept)** | **130.1 MP/s** |
+
+> Issue #72 added the first SIMD path for rgb→cmyk via f32x8, with a mask-blend guard for the
+> pure-black `k==1` divide-by-zero case (mirroring the JS `|| 0` fallback) — **2.04× over the
+> scalar batch**. No JS baseline is wired for rgb→cmyk yet; the keep decision is against the
+> previous Rust scalar iteration. `grep '"issue":72' results.jsonl`.
+
+### Cumulative self-improvement summary (waves 1–3)
+
+| Wave | Issue | Route | Δ | Decision |
+|------|-------|-------|---|----------|
+| 1 | #58 | rgb→hsl | 3.8× | ✅ kept |
+| 1 | #61 | rgb→lab (fused) | +10.9% | ✅ kept |
+| 1 | #25 | rgb→lab (SoA) | −8.6% | ❌ dropped |
+| 1 | #24 | rgb→lab (GPU sweep) | ±3% | ❌ dropped |
+| 2 | #65 | rgb→lab / rgb→xyz (vec transfer) | +30.7% / +21.2% | ✅ kept |
+| 2 | #64 | rgb→hsl→rgb (round-trip) | 3.1× | ✅ kept |
+| 3 | #71 | rgb→hsv | 3.72× | ✅ kept |
+| 3 | #72 | rgb→cmyk | 2.04× | ✅ kept |
+
+**6 kept, 2 dropped** across 3 waves — every kept change beat both the JS baseline (where wired)
+and the previous Rust iteration; every dropped change is recorded as a negative result. See
+[`docs/ARCHITECTURE_REVIEW.md`](../docs/ARCHITECTURE_REVIEW.md) for the full review.
