@@ -142,6 +142,22 @@ rg '"route":"rgb->hsl"' benchmarks/results.jsonl | rg '"tier":"cpu"'
 > No GPU or SIMD path for rgb→hsl yet. JS GC-driven degradation visible at N=50M (14.1 MP/s).
 > CPU scalar measurements omitted — compiler elimination suspected (see AGENTS.md).
 
+### rgb→hsl→rgb throughput (MP/s)
+
+**Issue #23 JS sweep (ledger: issue=23, tier=js)**
+
+| N | JS (issue=23, tier=js) |
+|---|---------------------------|
+| 100k | 10.9 MP/s |
+| 1M | 10.9 MP/s |
+| 10M | 10.6 MP/s |
+| 50M | 7.1 MP/s |
+| 100M | OOM (ledger: decision=oom) |
+
+> No GPU or SIMD path for rgb→hsl→rgb yet. JS shows GC-driven degradation at N=50M
+> (7.1 MP/s vs 10.9 MP/s at 1M). CPU scalar measurements omitted — compiler
+> elimination suspected (see AGENTS.md).
+
 ### rgb→xyz throughput (MP/s) — CPU SIMD
 
 **Issue #23 f64x4 sweep + Issue #51 f32x8**
