@@ -94,7 +94,7 @@ fn xyz_to_lab_batch_matches_scalar() {
         let scalar: Vec<[f64; 3]> = xyz_simd
             .iter()
             .map(|p| [f64::from(p[0]), f64::from(p[1]), f64::from(p[2])])
-            .map(|p| xyz::lab(p))
+            .map(xyz::lab)
             .collect();
         let simd_result = simd::xyz_to_lab_batch(&xyz_simd);
 
