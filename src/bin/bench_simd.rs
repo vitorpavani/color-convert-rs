@@ -20,6 +20,7 @@ use color_convert_rs::rgb;
 use color_convert_rs::simd;
 use color_convert_rs::simd_cmyk;
 use color_convert_rs::simd_hsl;
+use color_convert_rs::simd_hsv;
 
 // ── Path to the append-only results ledger ─────────────────────────────
 const RESULTS_PATH: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/benchmarks/results.jsonl");
@@ -287,6 +288,15 @@ fn rgb_to_cmyk_scalar_batch(pixels: &[[u8; 3]]) -> Vec<[f64; 4]> {
 
 fn rgb_to_cmyk_simd(pixels: &[[u8; 3]]) -> Vec<[f32; 4]> {
     simd_cmyk::rgb_to_cmyk_batch(pixels)
+}
+
+// ── HSV routes ────────────────────────────────────────────────────────
+fn rgb_to_hsv_scalar_batch(pixels: &[[u8; 3]]) -> Vec<[f64; 3]> {
+    pixels.iter().map(|&p| rgb::hsv(p)).collect()
+}
+
+fn rgb_to_hsv_simd(pixels: &[[u8; 3]]) -> Vec<[f32; 3]> {
+    simd_hsv::rgb_to_hsv_batch(pixels)
 }
 
 // ── Main ────────────────────────────────────────────────────────────────
@@ -558,6 +568,55 @@ fn main() {
     println!(
         "{:<18}  N={:>8}  best={:>9.3} ms  {:>10.1} MP/s  [SIMD]",
         "rgb->cmyk (SIMD)", n, cmyk_simd_ms, cmyk_simd_mps
+    );
+
+    // ── HSV routes ────────────────────────────────────────────────────
+    // rgb→hsv (scalar batch baseline)
+    let hsv_scalar_ms = bench_batch(&pixels, warmup_iters, timed_iters, rgb_to_hsv_scalar_batch);
+    let hsv_scalar_mps = (n as f64 / 1e6) / (hsv_scalar_ms / 1000.0);
+    append_record(
+        &ctx,
+        RecordParams {
+            route: "rgb->hsv",
+            best_ms: hsv_scalar_ms,
+            n,
+            iters: timed_iters,
+            warmup: warmup_iters,
+            decision: "baseline",
+            notes: &format!(
+                "Rust scalar batch baseline (pre-SIMD), N={}",
+                format_number(n)
+            ),
+            baseline_ref: None,
+        },
+    );
+    println!(
+        "{:<18}  N={:>8}  best={:>9.3} ms  {:>10.1} MP/s  [scalar]",
+        "rgb->hsv (scalar)", n, hsv_scalar_ms, hsv_scalar_mps
+    );
+
+    // rgb→hsv (SIMD batch via mask-blend)
+    let hsv_simd_ms = bench_batch(&pixels, warmup_iters, timed_iters, rgb_to_hsv_simd);
+    let hsv_simd_mps = (n as f64 / 1e6) / (hsv_simd_ms / 1000.0);
+    append_record(
+        &ctx,
+        RecordParams {
+            route: "rgb->hsv",
+            best_ms: hsv_simd_ms,
+            n,
+            iters: timed_iters,
+            warmup: warmup_iters,
+            decision: "kept",
+            notes: &format!(
+                "wide::f32x8 SIMD batch (mask-blend hue), N={}",
+                format_number(n)
+            ),
+            baseline_ref: Some(&ctx.commit),
+        },
+    );
+    println!(
+        "{:<18}  N={:>8}  best={:>9.3} ms  {:>10.1} MP/s  [SIMD]",
+        "rgb->hsv (SIMD)", n, hsv_simd_ms, hsv_simd_mps
     );
 
     println!("\nAppended 9 records to {}", RESULTS_PATH);
