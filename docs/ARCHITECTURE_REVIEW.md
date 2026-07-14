@@ -2,13 +2,13 @@
 
 **Author:** `improvement-dev` agent
 **Date:** 2026-07-14
-**Reviewed commit:** `99f7d52` (staging)
+**Reviewed commit:** `aa46918` (staging == main)
 **Scope:** Post-MVP self-improvement review — survey the architecture, propose multiple
 performance improvements, drive each through RED→GREEN→BLUE TDD, benchmark, and keep only what
 beats both the JS baseline and the previous Rust iteration.
 
-This is the standalone review artifact backing the two self-improvement waves. The concrete
-outcomes are tracked in GitHub issues #24, #25, #58, #61, #64, #65 and recorded in
+This is the standalone review artifact backing the self-improvement waves. The concrete
+outcomes are tracked in GitHub issues #24, #25, #58, #61, #64, #65, #71, #72 and recorded in
 `benchmarks/results.jsonl`; the rollup lives in [`benchmarks/README.md`](../benchmarks/README.md).
 
 ---
@@ -70,8 +70,12 @@ JS baseline AND the previous Rust iteration.
 | #65 | Vectorize srgb/LAB piecewise transfer across f32x8 (SIMD `powf`/`cbrt` + mask-blend) | rgb→lab | 24.4 → **31.9** MP/s | **+30.7%** | ✅ kept |
 | #65 | (same change) | rgb→xyz | 38.2 → **46.3** MP/s | **+21.2%** | ✅ kept |
 | #64 | SIMD `hsl→rgb` + `rgb→hsl→rgb` round-trip | rgb→hsl→rgb | 21.0 → **65.0** MP/s | **3.1× (9.2× vs JS)** | ✅ kept |
+| #71 | SIMD `rgb→hsv` (f32x8 mask-blend hue) | rgb→hsv | 38.9 → **144.7** MP/s | **3.72× (11.8× vs JS)** | ✅ kept |
+| #72 | SIMD `rgb→cmyk` (f32x8 black-guard mask-blend) | rgb→cmyk | 63.8 → **130.1** MP/s | **2.04×** | ✅ kept |
 | #25 | SoA vs AoS memory layout | rgb→lab | 22.1 → 20.2 MP/s | −8.6% | ❌ dropped |
 | #24 | GPU workgroup `BLOCK_SIZE` sweep {32,64,128,256} | rgb→lab (gpu) | 33.6 → 32.7–34.0 MP/s | ±3% noise | ❌ dropped |
+
+Waves 1–3 total: **6 kept, 2 dropped.**
 
 ### 2.1 Why the two drops are correct (not laziness)
 
@@ -89,6 +93,11 @@ JS baseline AND the previous Rust iteration.
 **rgb→lab CPU-SIMD journey:** 10.8 (f64x4, #23) → 22.1 (f32x8, #51) → 24.1 (fused, #61) →
 **31.9** (vectorized transfer, #65) MP/s at N=50M — a **2.95×** cumulative gain over the f64x4
 baseline, every step measured and each kept only on a proven win.
+
+**Wave-3 new SIMD routes:** `rgb→hsv` (#71) and `rgb→cmyk` (#72) each gained their first SIMD
+path via the same f32x8 mask-blend pattern proven on `rgb→hsl` (#58) — 3.72× and 2.04× over their
+scalar batch baselines respectively. Every route measured by the JS baseline now has a CPU-SIMD
+path that beats it by ≥9×.
 
 ---
 
@@ -109,7 +118,8 @@ lower expected leverage). Listed for the next self-improvement wave:
 
 1. **GPU memory staging** (from the #24 analysis): pinned/zero-copy upload buffers and
    double-buffered async upload/compute overlap — attacks the real (transfer) bottleneck.
-2. **SIMD for more scalar routes**: hsv, hwb, cmyk, lch batch paths currently have no SIMD.
+2. **SIMD for the remaining scalar routes**: `hsv` (#71) and `cmyk` (#72) are now done; `hwb`
+   and `lch` batch paths still have no SIMD.
 3. **Fused multi-hop `convert` for SIMD batches**: the BFS `Graph` chains scalar adapters; a
    batch fast-path for common multi-hop routes could avoid per-hop materialization.
 4. **`find_path` has no covering test** (flagged by codegraph); the routing graph is exercised
