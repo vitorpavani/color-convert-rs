@@ -115,19 +115,19 @@ pub fn rgb_to_hsl_batch(rgb: &[[u8; 3]]) -> Vec<[f32; 3]> {
         // Compute all three hue candidate expressions for all 8 lanes.
         // These are safe to compute even for lanes where the channel
         // is NOT the maximum — we select via blend afterwards.
-        let hue_r = (g_norm - b_norm) / delta;       // r-is-max
-        let hue_g = two + (b_norm - r_norm) / delta;  // g-is-max
+        let hue_r = (g_norm - b_norm) / delta; // r-is-max
+        let hue_g = two + (b_norm - r_norm) / delta; // g-is-max
         let hue_b = four + (r_norm - g_norm) / delta; // b-is-max
 
-        // Build masks from the CmpEq trait (simd_eq returns f32x8 mask)
+        // Build masks (simd_eq is an inherent method on f32x8 in wide ≥1.5)
         let mask_r = max.simd_eq(r_norm);
         let mask_g = max.simd_eq(g_norm);
 
         // Select: b→g→r (mirrors JS else-if chain: b else, g elif, r if)
         // mask.blend(true_val, false_val): pick true_val where mask bit is set
         let mut hue = hue_b;
-        hue = mask_g.blend(hue_g, hue);                     // g==max → pick hue_g
-        hue = mask_r.blend(hue_r, hue);                     // r==max → pick hue_r
+        hue = mask_g.blend(hue_g, hue); // g==max → pick hue_g
+        hue = mask_r.blend(hue_r, hue); // r==max → pick hue_r
 
         // Scale by 60, clamp to 360, handle negatives
         hue *= sixty;
@@ -143,7 +143,7 @@ pub fn rgb_to_hsl_batch(rgb: &[[u8; 3]]) -> Vec<[f32; 3]> {
 
         let mask_lo = l.simd_le(half);
         let mut sat = s_hi;
-        sat = mask_lo.blend(s_lo, sat);                     // l<=0.5 → pick s_lo
+        sat = mask_lo.blend(s_lo, sat); // l<=0.5 → pick s_lo
 
         // Force hue and saturation to zero when max==min.
         let mask_achromatic = max.simd_eq(min);

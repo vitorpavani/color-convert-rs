@@ -90,20 +90,20 @@ fn rgb_to_hsl_batch_achromatic_and_edge_cases() {
     // primaries, and extreme values.
     let test_pixels: Vec<[u8; 3]> = vec![
         // Achromatic (various grey levels)
-        [0, 0, 0],         // black  → h=0, s=0, l=0
-        [128, 128, 128],   // grey   → h=0, s=0, l≈50
-        [255, 255, 255],   // white  → h=0, s=0, l=100
+        [0, 0, 0],       // black  → h=0, s=0, l=0
+        [128, 128, 128], // grey   → h=0, s=0, l≈50
+        [255, 255, 255], // white  → h=0, s=0, l=100
         // Primary colours
-        [255, 0, 0],       // red    → h=0,   s=100, l=50
-        [0, 255, 0],       // green  → h=120, s=100, l=50
-        [0, 0, 255],       // blue   → h=240, s=100, l=50
+        [255, 0, 0], // red    → h=0,   s=100, l=50
+        [0, 255, 0], // green  → h=120, s=100, l=50
+        [0, 0, 255], // blue   → h=240, s=100, l=50
         // Secondary colours
-        [255, 255, 0],     // yellow → h=60,  s=100, l=50
-        [0, 255, 255],     // cyan   → h=180, s=100, l=50
-        [255, 0, 255],     // magenta→ h=300, s=100, l=50
+        [255, 255, 0], // yellow → h=60,  s=100, l=50
+        [0, 255, 255], // cyan   → h=180, s=100, l=50
+        [255, 0, 255], // magenta→ h=300, s=100, l=50
         // Edge cases
-        [1, 0, 0],         // near-black red
-        [254, 255, 255],   // near-white with hint
+        [1, 0, 0],       // near-black red
+        [254, 255, 255], // near-white with hint
     ];
 
     let scalar: Vec<[f64; 3]> = test_pixels.iter().map(|&p| rgb::hsl(p)).collect();
