@@ -25,6 +25,7 @@ pub mod oklch;
 pub mod probe;
 pub mod rgb;
 pub mod simd;
+pub mod simd_cmyk;
 pub mod simd_hsl;
 pub mod xyz;
 

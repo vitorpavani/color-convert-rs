@@ -18,6 +18,7 @@ use std::time::{Instant, SystemTime, UNIX_EPOCH};
 use color_convert_rs::hsl;
 use color_convert_rs::rgb;
 use color_convert_rs::simd;
+use color_convert_rs::simd_cmyk;
 use color_convert_rs::simd_hsl;
 
 // ── Path to the append-only results ledger ─────────────────────────────
@@ -279,6 +280,15 @@ fn rgb_hsl_rgb_simd(pixels: &[[u8; 3]]) -> Vec<[f32; 3]> {
     simd_hsl::hsl_to_rgb_batch(&hsl_batch)
 }
 
+// ── CMYK routes ───────────────────────────────────────────────────────
+fn rgb_to_cmyk_scalar_batch(pixels: &[[u8; 3]]) -> Vec<[f64; 4]> {
+    pixels.iter().map(|&p| rgb::cmyk(p)).collect()
+}
+
+fn rgb_to_cmyk_simd(pixels: &[[u8; 3]]) -> Vec<[f32; 4]> {
+    simd_cmyk::rgb_to_cmyk_batch(pixels)
+}
+
 // ── Main ────────────────────────────────────────────────────────────────
 fn main() {
     let args: Vec<String> = std::env::args().collect();
@@ -501,5 +511,54 @@ fn main() {
         "rgb->hsl->rgb (pp)", n, hslrgb_pp_ms, hslrgb_pp_mps
     );
 
-    println!("\nAppended 7 records to {}", RESULTS_PATH);
+    // ── CMYK routes ───────────────────────────────────────────────────
+    // rgb→cmyk (scalar batch baseline)
+    let cmyk_scalar_ms = bench_batch(&pixels, warmup_iters, timed_iters, rgb_to_cmyk_scalar_batch);
+    let cmyk_scalar_mps = (n as f64 / 1e6) / (cmyk_scalar_ms / 1000.0);
+    append_record(
+        &ctx,
+        RecordParams {
+            route: "rgb->cmyk",
+            best_ms: cmyk_scalar_ms,
+            n,
+            iters: timed_iters,
+            warmup: warmup_iters,
+            decision: "baseline",
+            notes: &format!(
+                "Rust scalar batch baseline (pre-SIMD), N={}",
+                format_number(n)
+            ),
+            baseline_ref: None,
+        },
+    );
+    println!(
+        "{:<18}  N={:>8}  best={:>9.3} ms  {:>10.1} MP/s  [scalar]",
+        "rgb->cmyk (scalar)", n, cmyk_scalar_ms, cmyk_scalar_mps
+    );
+
+    // rgb→cmyk (SIMD batch via mask-blend)
+    let cmyk_simd_ms = bench_batch(&pixels, warmup_iters, timed_iters, rgb_to_cmyk_simd);
+    let cmyk_simd_mps = (n as f64 / 1e6) / (cmyk_simd_ms / 1000.0);
+    append_record(
+        &ctx,
+        RecordParams {
+            route: "rgb->cmyk",
+            best_ms: cmyk_simd_ms,
+            n,
+            iters: timed_iters,
+            warmup: warmup_iters,
+            decision: "kept",
+            notes: &format!(
+                "wide::f32x8 SIMD batch (mask-blend black guard), N={}",
+                format_number(n)
+            ),
+            baseline_ref: Some(&ctx.commit),
+        },
+    );
+    println!(
+        "{:<18}  N={:>8}  best={:>9.3} ms  {:>10.1} MP/s  [SIMD]",
+        "rgb->cmyk (SIMD)", n, cmyk_simd_ms, cmyk_simd_mps
+    );
+
+    println!("\nAppended 9 records to {}", RESULTS_PATH);
 }
