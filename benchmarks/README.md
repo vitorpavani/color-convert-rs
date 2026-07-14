@@ -263,6 +263,21 @@ reduce total data in flight.
 > the scalar batch**. No JS baseline is wired for rgb→hwb yet; the keep decision is against
 > the previous Rust scalar iteration. `grep '"issue":78' results.jsonl`.
 
+### rgb→oklab throughput (MP/s) — now CPU SIMD (#79)
+
+| Tier | @N=50M |
+|------|--------|
+| Rust scalar batch (issue=79 baseline) | 9.1 MP/s |
+| **Rust f32x8 SIMD (issue=79, decision=kept)** | **31.9 MP/s** |
+
+> Issue #79 added the first SIMD path for rgb→oklab — the most transcendental-heavy route
+> (per pixel: 3× srgb inverse-gamma `powf(2.4)` + LMS matrix + 3× `cbrt` + Oklab matrix).
+> Vectorized across f32x8, reusing `simd::srgb_inv_f32x8` (from #65) and `wide::f32x8::cbrt` —
+> **3.51× over the scalar batch**, the **largest single-route speedup** in the project. The
+> cbrt-heavy route benefits *more* from SIMD than the simpler matrix routes because the scalar
+> transcendentals are so expensive. Accuracy bound: tol=1e-3. No JS baseline wired; the keep
+> decision is against the previous Rust scalar iteration. `grep '"issue":79' results.jsonl`.
+
 ### Cumulative self-improvement summary (waves 1–4)
 
 | Wave | Issue | Route | Δ | Decision |
@@ -276,7 +291,8 @@ reduce total data in flight.
 | 3 | #71 | rgb→hsv | 3.72× | ✅ kept |
 | 3 | #72 | rgb→cmyk | 2.04× | ✅ kept |
 | 4 | #78 | rgb→hwb | 3.33× | ✅ kept |
+| 4 | #79 | rgb→oklab | 3.51× | ✅ kept |
 
-**7 kept, 2 dropped** across 4 waves — every kept change beat both the JS baseline (where wired)
+**8 kept, 2 dropped** across 4 waves — every kept change beat both the JS baseline (where wired)
 and the previous Rust iteration; every dropped change is recorded as a negative result. See
 [`docs/ARCHITECTURE_REVIEW.md`](../docs/ARCHITECTURE_REVIEW.md) for the full review.
