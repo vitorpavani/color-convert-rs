@@ -460,3 +460,61 @@ pub fn rgb_to_lab_batch(rgb: &[[u8; 3]]) -> Vec<[f32; 3]> {
 
     result
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use wide::f32x8;
+
+    /// Behavior: `srgb_inv_f32x8` must match the scalar `srgb_inv_f32` for
+    /// representative values across all 8 SIMD lanes.
+    ///
+    /// Inputs span the piecewise threshold (0.04045), dark values, bright
+    /// values, and the boundary itself.  Tolerance: f32::EPSILON * 1000
+    /// (generous enough to absorb any subnormal or micro-architectural
+    /// quirk while catching real algorithmic divergence).
+    #[test]
+    fn srgb_inv_f32x8_matches_scalar() {
+        const TOL: f32 = f32::EPSILON * 1000.0;
+        // Representative inputs across the piecewise boundary
+        let inputs = [0.0_f32, 0.01, 0.04045, 0.04046, 0.5, 0.75, 1.0, 2.0];
+        let v = f32x8::new(inputs);
+        // This call will FAIL TO COMPILE until the function exists:
+        let result = srgb_inv_f32x8(v).to_array();
+
+        for i in 0..8 {
+            let want = srgb_inv_f32(inputs[i]);
+            let diff = (result[i] - want).abs();
+            assert!(
+                diff <= TOL,
+                "lane {i}: srgb_inv_f32x8({})={}, scalar={}, diff={:.2e} > tol",
+                inputs[i], result[i], want, diff,
+            );
+        }
+    }
+
+    /// Behavior: `lab_transfer_f32x8` must match the scalar `lab_transfer_f32`
+    /// for representative values across all 8 SIMD lanes.
+    ///
+    /// Inputs span the CIE LAB piecewise threshold `ft = (6/29)³ ≈ 0.008856`,
+    /// plus dark and bright values. Tolerance: f32::EPSILON * 1000.
+    #[test]
+    fn lab_transfer_f32x8_matches_scalar() {
+        const TOL: f32 = f32::EPSILON * 1000.0;
+        let ft = (6.0_f32 / 29.0).powi(3); // ≈ 0.008856
+        let inputs = [0.0_f32, 0.001, ft * 0.5, ft, ft * 1.01, 0.1, 0.5, 1.0];
+        let v = f32x8::new(inputs);
+        // This call will FAIL TO COMPILE until the function exists:
+        let result = lab_transfer_f32x8(v).to_array();
+
+        for i in 0..8 {
+            let want = lab_transfer_f32(inputs[i]);
+            let diff = (result[i] - want).abs();
+            assert!(
+                diff <= TOL,
+                "lane {i}: lab_transfer_f32x8({})={}, scalar={}, diff={:.2e} > tol",
+                inputs[i], result[i], want, diff,
+            );
+        }
+    }
+}
