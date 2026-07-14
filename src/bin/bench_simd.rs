@@ -171,48 +171,26 @@ struct BenchCtx {
     commit: String,
     host: String,
     gpu_present: bool,
+    issue: u32,
+}
+
+struct Measurement {
+    route: &'static str,
+    best_ms: f64,
+    n: usize,
+    iters: usize,
+    warmup: usize,
 }
 
 fn append_record(
-    route: &str,
-    best_ms: f64,
-    n: usize,
-    iters: usize,
-    warmup: usize,
-    ctx: &BenchCtx,
-    notes: &str,
-) {
-    append_record_with_issue(route, best_ms, n, iters, warmup, ctx, notes, 23, "baseline", None);
-}
-
-fn append_record_25(
-    route: &str,
-    best_ms: f64,
-    n: usize,
-    iters: usize,
-    warmup: usize,
+    m: &Measurement,
     ctx: &BenchCtx,
     notes: &str,
     decision: &str,
     baseline_ref: Option<&str>,
 ) {
-    append_record_with_issue(route, best_ms, n, iters, warmup, ctx, notes, 25, decision, baseline_ref);
-}
-
-fn append_record_with_issue(
-    route: &str,
-    best_ms: f64,
-    n: usize,
-    iters: usize,
-    warmup: usize,
-    ctx: &BenchCtx,
-    notes: &str,
-    issue: u32,
-    decision: &str,
-    baseline_ref: Option<&str>,
-) {
-    let throughput_mps = (n as f64 / 1_000_000.0) / (best_ms / 1000.0);
-    let escaped_route = route.replace('\\', "\\\\").replace('"', "\\\"");
+    let throughput_mps = (m.n as f64 / 1_000_000.0) / (m.best_ms / 1000.0);
+    let escaped_route = m.route.replace('\\', "\\\\").replace('"', "\\\"");
     let ts = utc_now_iso();
     let escaped_notes = notes.replace('\\', "\\\\").replace('"', "\\\"");
 
@@ -231,13 +209,13 @@ fn append_record_with_issue(
         ),
         ts = ts,
         commit = ctx.commit,
-        issue = issue,
+        issue = ctx.issue,
         route = escaped_route,
-        n = n,
+        n = m.n,
         mps = throughput_mps,
-        ms = best_ms,
-        iters = iters,
-        warmup = warmup,
+        ms = m.best_ms,
+        iters = m.iters,
+        warmup = m.warmup,
         host = ctx.host,
         gp = ctx.gpu_present,
         decision = decision,
@@ -342,10 +320,17 @@ fn main() {
     let host = hostname();
     let commit = git_short_sha();
     let gpu_present = color_convert_rs::gpu_present();
-    let ctx = BenchCtx {
+    let ctx_aos = BenchCtx {
         commit: commit.clone(),
         host: host.clone(),
         gpu_present,
+        issue: 23,
+    };
+    let ctx_soa = BenchCtx {
+        commit: commit.clone(),
+        host: host.clone(),
+        gpu_present,
+        issue: 25,
     };
 
     println!(
@@ -360,13 +345,17 @@ fn main() {
     let xyz_ms = bench_batch(&pixels, warmup_iters, timed_iters, rgb_to_xyz_simd);
     let xyz_mps = (n as f64 / 1e6) / (xyz_ms / 1000.0);
     append_record(
-        "rgb->xyz",
-        xyz_ms,
-        n,
-        timed_iters,
-        warmup_iters,
-        &ctx,
+        &Measurement {
+            route: "rgb->xyz",
+            best_ms: xyz_ms,
+            n,
+            iters: timed_iters,
+            warmup: warmup_iters,
+        },
+        &ctx_aos,
         &format!("wide::f64x4 SIMD batch, N={}", format_number(n)),
+        "baseline",
+        None,
     );
     println!(
         "{:<18}  N={:>8}  best={:>9.3} ms  {:>10.1} MP/s  [SIMD]",
@@ -377,16 +366,20 @@ fn main() {
     let lab_ms = bench_batch(&pixels, warmup_iters, timed_iters, rgb_to_lab_simd);
     let lab_mps = (n as f64 / 1e6) / (lab_ms / 1000.0);
     append_record(
-        "rgb->lab",
-        lab_ms,
-        n,
-        timed_iters,
-        warmup_iters,
-        &ctx,
+        &Measurement {
+            route: "rgb->lab",
+            best_ms: lab_ms,
+            n,
+            iters: timed_iters,
+            warmup: warmup_iters,
+        },
+        &ctx_aos,
         &format!(
             "wide::f64x4 SIMD batch (xyz→lab chain), N={}",
             format_number(n)
         ),
+        "baseline",
+        None,
     );
     println!(
         "{:<18}  N={:>8}  best={:>9.3} ms  {:>10.1} MP/s  [SIMD]",
@@ -398,14 +391,19 @@ fn main() {
     // rgb→xyz (SoA SIMD batch)
     let xyz_soa_ms = bench_batch(&pixels, warmup_iters, timed_iters, rgb_to_xyz_simd_soa);
     let xyz_soa_mps = (n as f64 / 1e6) / (xyz_soa_ms / 1000.0);
-    append_record_25(
-        "rgb->xyz",
-        xyz_soa_ms,
-        n,
-        timed_iters,
-        warmup_iters,
-        &ctx,
-        &format!("wide::f32x8 SoA SIMD batch (+AoS→SoA transpose), N={}", format_number(n)),
+    append_record(
+        &Measurement {
+            route: "rgb->xyz",
+            best_ms: xyz_soa_ms,
+            n,
+            iters: timed_iters,
+            warmup: warmup_iters,
+        },
+        &ctx_soa,
+        &format!(
+            "wide::f32x8 SoA SIMD batch (+AoS→SoA transpose), N={}",
+            format_number(n)
+        ),
         "baseline",
         None,
     );
@@ -417,13 +415,15 @@ fn main() {
     // rgb→lab (SoA SIMD: SoA xyz → SoA lab chain)
     let lab_soa_ms = bench_batch(&pixels, warmup_iters, timed_iters, rgb_to_lab_simd_soa);
     let lab_soa_mps = (n as f64 / 1e6) / (lab_soa_ms / 1000.0);
-    append_record_25(
-        "rgb->lab",
-        lab_soa_ms,
-        n,
-        timed_iters,
-        warmup_iters,
-        &ctx,
+    append_record(
+        &Measurement {
+            route: "rgb->lab",
+            best_ms: lab_soa_ms,
+            n,
+            iters: timed_iters,
+            warmup: warmup_iters,
+        },
+        &ctx_soa,
         &format!(
             "wide::f32x8 SoA SIMD batch (+AoS→SoA transposes), N={}",
             format_number(n)
