@@ -758,8 +758,12 @@ fn main() {
 
     // ── Apple routes ────────────────────────────────────────────────────
     // rgb->apple (scalar batch baseline)
-    let apple_scalar_ms =
-        bench_batch(&pixels, warmup_iters, timed_iters, rgb_to_apple_scalar_batch);
+    let apple_scalar_ms = bench_batch(
+        &pixels,
+        warmup_iters,
+        timed_iters,
+        rgb_to_apple_scalar_batch,
+    );
     let apple_scalar_mps = (n as f64 / 1e6) / (apple_scalar_ms / 1000.0);
     append_record(
         &ctx,
