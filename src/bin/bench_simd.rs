@@ -218,11 +218,11 @@ fn append_record(
 }
 
 // ── Route definitions ──────────────────────────────────────────────────
-fn rgb_to_xyz_simd(pixels: &[[u8; 3]]) -> Vec<[f64; 3]> {
+fn rgb_to_xyz_simd(pixels: &[[u8; 3]]) -> Vec<[f32; 3]> {
     simd::rgb_to_xyz_batch(pixels)
 }
 
-fn rgb_to_lab_simd(pixels: &[[u8; 3]]) -> Vec<[f64; 3]> {
+fn rgb_to_lab_simd(pixels: &[[u8; 3]]) -> Vec<[f32; 3]> {
     let xyz_batch = simd::rgb_to_xyz_batch(pixels);
     simd::xyz_to_lab_batch(&xyz_batch)
 }
