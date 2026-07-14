@@ -2,13 +2,13 @@
 
 **Author:** `improvement-dev` agent
 **Date:** 2026-07-14
-**Reviewed commit:** `aa46918` (staging == main)
+**Reviewed commit:** `a353aa6` (staging)
 **Scope:** Post-MVP self-improvement review — survey the architecture, propose multiple
 performance improvements, drive each through RED→GREEN→BLUE TDD, benchmark, and keep only what
 beats both the JS baseline and the previous Rust iteration.
 
 This is the standalone review artifact backing the self-improvement waves. The concrete
-outcomes are tracked in GitHub issues #24, #25, #58, #61, #64, #65, #71, #72 and recorded in
+outcomes are tracked in GitHub issues #24, #25, #58, #61, #64, #65, #71, #72, #78, #79 and recorded in
 `benchmarks/results.jsonl`; the rollup lives in [`benchmarks/README.md`](../benchmarks/README.md).
 
 ---
@@ -72,10 +72,12 @@ JS baseline AND the previous Rust iteration.
 | #64 | SIMD `hsl→rgb` + `rgb→hsl→rgb` round-trip | rgb→hsl→rgb | 21.0 → **65.0** MP/s | **3.1× (9.2× vs JS)** | ✅ kept |
 | #71 | SIMD `rgb→hsv` (f32x8 mask-blend hue) | rgb→hsv | 38.9 → **144.7** MP/s | **3.72× (11.8× vs JS)** | ✅ kept |
 | #72 | SIMD `rgb→cmyk` (f32x8 black-guard mask-blend) | rgb→cmyk | 63.8 → **130.1** MP/s | **2.04×** | ✅ kept |
+| #78 | SIMD `rgb→hwb` (f32x8, reuses hsl hue mask-blend) | rgb→hwb | 44.0 → **146.4** MP/s | **3.33×** | ✅ kept |
+| #79 | SIMD `rgb→oklab` (f32x8 powf/cbrt + dual matrix) | rgb→oklab | 9.1 → **31.9** MP/s | **3.51×** | ✅ kept |
 | #25 | SoA vs AoS memory layout | rgb→lab | 22.1 → 20.2 MP/s | −8.6% | ❌ dropped |
 | #24 | GPU workgroup `BLOCK_SIZE` sweep {32,64,128,256} | rgb→lab (gpu) | 33.6 → 32.7–34.0 MP/s | ±3% noise | ❌ dropped |
 
-Waves 1–3 total: **6 kept, 2 dropped.**
+Waves 1–4 total: **8 kept, 2 dropped.**
 
 ### 2.1 Why the two drops are correct (not laziness)
 
@@ -118,11 +120,15 @@ lower expected leverage). Listed for the next self-improvement wave:
 
 1. **GPU memory staging** (from the #24 analysis): pinned/zero-copy upload buffers and
    double-buffered async upload/compute overlap — attacks the real (transfer) bottleneck.
-2. **SIMD for the remaining scalar routes**: `hsv` (#71) and `cmyk` (#72) are now done; `hwb`
-   and `lch` batch paths still have no SIMD.
-3. **Fused multi-hop `convert` for SIMD batches**: the BFS `Graph` chains scalar adapters; a
+2. **SIMD for the remaining scalar routes**: `hsv` (#71), `cmyk` (#72), `hwb` (#78) and
+   `oklab` (#79) are now done; `lch` / `oklch` batch paths still have no SIMD.
+3. **GPU-tier coverage for the new SIMD routes**: every wave-1–4 CPU-SIMD record is
+   `gpu_present:false` — the new routes (hsv, cmyk, hwb, oklab, hsl round-trip) have no GPU
+   kernel and no `tier:"gpu"` measurement. Only `rgb→lab` has a GPU path. A future wave could
+   add GPU kernels (or at least record GPU-tier numbers via `run-bench-gpu.sh`) for parity.
+4. **Fused multi-hop `convert` for SIMD batches**: the BFS `Graph` chains scalar adapters; a
    batch fast-path for common multi-hop routes could avoid per-hop materialization.
-4. **`find_path` has no covering test** (flagged by codegraph); the routing graph is exercised
+5. **`find_path` has no covering test** (flagged by codegraph); the routing graph is exercised
    only indirectly via `convert`. A direct BFS-path unit test would harden it.
 
 ---
