@@ -42,7 +42,7 @@
 /// via `mask.blend(pow_branch, linear_branch)`.  Uses `f32x8::powf(2.4)` which
 /// delegates to the `wide` crate's LLVM-generated vector intrinsic.
 #[inline]
-fn srgb_inv_f32x8(c: wide::f32x8) -> wide::f32x8 {
+pub(crate) fn srgb_inv_f32x8(c: wide::f32x8) -> wide::f32x8 {
     let pow_branch = ((c + wide::f32x8::splat(0.055)) / wide::f32x8::splat(1.055)).powf(2.4);
     let linear_branch = c / wide::f32x8::splat(12.92);
     let mask = c.simd_gt(wide::f32x8::splat(0.04045));
