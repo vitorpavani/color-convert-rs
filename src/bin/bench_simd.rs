@@ -631,8 +631,12 @@ fn main() {
 
     // ── Oklab routes ───────────────────────────────────────────────────
     // rgb→oklab (scalar batch baseline)
-    let oklab_scalar_ms =
-        bench_batch(&pixels, warmup_iters, timed_iters, rgb_to_oklab_scalar_batch);
+    let oklab_scalar_ms = bench_batch(
+        &pixels,
+        warmup_iters,
+        timed_iters,
+        rgb_to_oklab_scalar_batch,
+    );
     let oklab_scalar_mps = (n as f64 / 1e6) / (oklab_scalar_ms / 1000.0);
     append_record(
         &ctx,
