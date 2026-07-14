@@ -171,6 +171,29 @@ fn rgb_to_lab_kernel(input: &Array<f32>, output: &mut Array<f32>, n_pixels: usiz
 // items from a `#[cube]` kernel context — the kernel needs to be a single
 // compilation unit for the WGSL/SPIR-V codegen.
 
+// ── Launch grid helper ─────────────────────────────────────────────────
+// wgpu limits each dispatch dimension to 65535. For large N we split into
+// a 2-D grid so the per-dimension block count stays within the limit.
+// ABSOLUTE_POS in the kernel is a scalar linear index that works correctly
+// with any grid dimensionality.
+
+const MAX_DISPATCH_DIM: u32 = 65535;
+const BLOCK_SIZE: u32 = 64;
+
+fn compute_launch_grid(n_pixels: usize) -> (CubeCount, CubeDim) {
+    let n_u32: u32 = u32::try_from(n_pixels).unwrap_or(u32::MAX);
+    let total_blocks = n_u32.div_ceil(BLOCK_SIZE);
+
+    if total_blocks <= MAX_DISPATCH_DIM {
+        (CubeCount::new_1d(total_blocks), CubeDim::new_1d(BLOCK_SIZE))
+    } else {
+        // 2-D split: both dims ≤ 65535, product ≥ total_blocks
+        let grid_y = total_blocks.div_ceil(MAX_DISPATCH_DIM).min(MAX_DISPATCH_DIM);
+        let grid_x = total_blocks.div_ceil(grid_y).min(MAX_DISPATCH_DIM);
+        (CubeCount::new_2d(grid_x, grid_y), CubeDim::new_2d(BLOCK_SIZE, 1))
+    }
+}
+
 // ── Host-side launch harness ──────────────────────────────────────────
 
 /// Converts a batch of `[u8; 3]` RGB pixels to CIELAB `[f32; 3]` using
@@ -220,9 +243,7 @@ pub fn rgb_to_lab_gpu_batch(rgb: &[[u8; 3]]) -> Option<Vec<[f32; 3]>> {
     let out_handle = client.empty(n_float * size_of::<f32>());
 
     // ── Launch configuration ────────────────────────────────────────
-    let cube_dim = CubeDim::new_1d(64);
-    let n_u32: u32 = u32::try_from(n).unwrap_or(u32::MAX);
-    let cube_count = CubeCount::new_1d(n_u32.div_ceil(cube_dim.x));
+    let (cube_count, cube_dim) = compute_launch_grid(n);
 
     // SAFETY: The kernel launch is unsafe per the CubeCL API because the
     // runtime cannot statically verify that the ArrayArg handles match the
@@ -323,10 +344,8 @@ pub fn rgb_to_lab_gpu_batch_timed(rgb: &[[u8; 3]]) -> Option<(Vec<[f32; 3]>, Gpu
     let out_handle = client.empty(n_float * size_of::<f32>());
     let upload_ms = upload_start.elapsed().as_secs_f64() * 1000.0;
 
-    // ── Compute (kernel launch — synchronous in CubeCL 0.10) ────────────
-    let cube_dim = CubeDim::new_1d(64);
-    let n_u32: u32 = u32::try_from(n).unwrap_or(u32::MAX);
-    let cube_count = CubeCount::new_1d(n_u32.div_ceil(cube_dim.x));
+    // ── Compute (kernel launch, async in CubeCL 0.10) ──────────────
+    let (cube_count, cube_dim) = compute_launch_grid(n);
 
     let compute_start = Instant::now();
     // SAFETY: The kernel launch is unsafe per the CubeCL API because the
