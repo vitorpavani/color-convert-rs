@@ -112,12 +112,18 @@ fn find_path_result_is_stable_across_calls_cache() {
     let first = g.find_path(Model::Oklch, Model::Cmyk);
     let second = g.find_path(Model::Oklch, Model::Cmyk);
     assert!(first.is_some(), "oklch->cmyk must be reachable");
-    assert_eq!(first, second, "cached result must equal the first computation");
+    assert_eq!(
+        first, second,
+        "cached result must equal the first computation"
+    );
     // A cached path is never empty and always starts at `from`, ends at `to`.
     let path = first.expect("reachable");
     assert_eq!(path.first(), Some(&Model::Oklch));
     assert_eq!(path.last(), Some(&Model::Cmyk));
-    assert!(path.len() >= 2, "a non-identity path has at least two nodes");
+    assert!(
+        path.len() >= 2,
+        "a non-identity path has at least two nodes"
+    );
 }
 
 #[test]
