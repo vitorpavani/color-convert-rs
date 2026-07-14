@@ -18,6 +18,7 @@ use std::time::{Instant, SystemTime, UNIX_EPOCH};
 use color_convert_rs::hsl;
 use color_convert_rs::rgb;
 use color_convert_rs::simd;
+use color_convert_rs::simd_apple;
 use color_convert_rs::simd_cmyk;
 use color_convert_rs::simd_hsl;
 use color_convert_rs::simd_hsv;
@@ -317,6 +318,15 @@ fn rgb_to_hwb_scalar_batch(pixels: &[[u8; 3]]) -> Vec<[f64; 3]> {
 
 fn rgb_to_hwb_simd(pixels: &[[u8; 3]]) -> Vec<[f32; 3]> {
     simd_hwb::rgb_to_hwb_batch(pixels)
+}
+
+// ── Apple routes ──────────────────────────────────────────────────────
+fn rgb_to_apple_scalar_batch(pixels: &[[u8; 3]]) -> Vec<[f64; 3]> {
+    pixels.iter().map(|&p| rgb::apple(p)).collect()
+}
+
+fn rgb_to_apple_simd(pixels: &[[u8; 3]]) -> Vec<[f32; 3]> {
+    simd_apple::rgb_to_apple_batch(pixels)
 }
 
 // ── Main ────────────────────────────────────────────────────────────────
@@ -746,5 +756,59 @@ fn main() {
         "rgb->hwb (SIMD)", n, hwb_simd_ms, hwb_simd_mps
     );
 
-    println!("\nAppended 13 records to {}", RESULTS_PATH);
+    // ── Apple routes ────────────────────────────────────────────────────
+    // rgb->apple (scalar batch baseline)
+    let apple_scalar_ms =
+        bench_batch(&pixels, warmup_iters, timed_iters, rgb_to_apple_scalar_batch);
+    let apple_scalar_mps = (n as f64 / 1e6) / (apple_scalar_ms / 1000.0);
+    append_record(
+        &ctx,
+        RecordParams {
+            route: "rgb->apple",
+            best_ms: apple_scalar_ms,
+            n,
+            iters: timed_iters,
+            warmup: warmup_iters,
+            decision: "baseline",
+            notes: &format!(
+                "Rust scalar batch baseline (pre-SIMD), N={}",
+                format_number(n)
+            ),
+            baseline_ref: None,
+        },
+    );
+    println!(
+        "{:<18}  N={:>8}  best={:>9.3} ms  {:>10.1} MP/s  [scalar]",
+        "rgb->apple (scalar)", n, apple_scalar_ms, apple_scalar_mps
+    );
+
+    // rgb->apple (SIMD batch via f32x8 linear scale)
+    let apple_simd_ms = bench_batch(&pixels, warmup_iters, timed_iters, rgb_to_apple_simd);
+    let apple_simd_mps = (n as f64 / 1e6) / (apple_simd_ms / 1000.0);
+    let apple_kept = apple_simd_mps > apple_scalar_mps;
+    let apple_decision = if apple_kept { "kept" } else { "reverted" };
+    let apple_speedup = apple_simd_mps / apple_scalar_mps;
+    append_record(
+        &ctx,
+        RecordParams {
+            route: "rgb->apple",
+            best_ms: apple_simd_ms,
+            n,
+            iters: timed_iters,
+            warmup: warmup_iters,
+            decision: apple_decision,
+            notes: &format!(
+                "wide::f32x8 SIMD batch (linear scale x257.0), N={}, speedup={:.2}x, tol=1e-6",
+                format_number(n),
+                apple_speedup
+            ),
+            baseline_ref: Some(&ctx.commit),
+        },
+    );
+    println!(
+        "{:<18}  N={:>8}  best={:>9.3} ms  {:>10.1} MP/s  [SIMD]  speedup={:.2}x  decision={}",
+        "rgb->apple (SIMD)", n, apple_simd_ms, apple_simd_mps, apple_speedup, apple_decision
+    );
+
+    println!("\nAppended 15 records to {}", RESULTS_PATH);
 }

@@ -99,6 +99,7 @@ const ROUTES = {
   'rgb->cmyk': (r, g, b) => convert.rgb.cmyk(r, g, b),
   'rgb->hwb': (r, g, b) => convert.rgb.hwb(r, g, b),
   'rgb->oklab': (r, g, b) => convert.rgb.oklab(r, g, b),
+  'rgb->apple': (r, g, b) => convert.rgb.apple(r, g, b),
   'rgb->hsl->rgb': (r, g, b) => {
     const hsl = convert.rgb.hsl(r, g, b);
     return convert.hsl.rgb(hsl[0], hsl[1], hsl[2]);
