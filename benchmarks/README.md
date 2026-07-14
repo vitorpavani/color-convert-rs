@@ -114,7 +114,7 @@ rg '"route":"rgb->hsl"' benchmarks/results.jsonl | rg '"tier":"cpu"'
 | 50M | 10.8 MP/s | **22.1 MP/s** | **2.04×** | 3.6× |
 | 100M | 10.7 MP/s | **22.2 MP/s** | **2.08×** | — (JS OOM) |
 
-> f64x4 baseline measured at commit `0aa8737`; f32x8 at commit `5d4b85c`.
+> f64x4 baseline measured at commit `1a4e607`; f32x8 at commit `5d4b85c`.
 > `grep '"issue":51' results.jsonl` confirms 4 baseline + 4 kept records.
 
 ### Key observations
@@ -124,8 +124,37 @@ rg '"route":"rgb->hsl"' benchmarks/results.jsonl | rg '"tier":"cpu"'
 - **GPU throughput scales up** with N: 14→27→33→35 MP/s, plateauing at ~35 MP/s around N=50M.
 - **JS degrades** from 7.2→6.1 MP/s (GC pressure visible at N=50M), then **OOM crash** at N=100M.
 - **GPU crossover**: GPU beats CPU-SIMD even at N=100k. With f32x8, the CPU-SIMD gap narrows to 1.6× (22.1 vs 34.9 MP/s at N=50M).
-- **Transfer-vs-compute**: Upload (host→device) consumes ~50% of GPU wall time across all N > 100k. The kernel is **transfer-bound** — see issue #23→#24 gate analysis below.
 - **GPU kernel panic** at N=10M before the 2-D launch grid fix (wgpu dispatch limit 65535 per dimension); fixed in commit `970a7c4`.
+
+### Issue #23 → #24 gate: is the GPU kernel compute-bound?
+
+All data from `issue:23`, `tier:gpu`, `route:rgb->lab` ledger lines. The GPU harness
+records per-phase timing: upload (host→device), compute (kernel launch only — CubeCL
+launch is asynchronous so this measures dispatch overhead, not GPU execution), and
+readback (blocking `read_one` that includes both GPU compute AND device→host transfer).
+
+| N | upload ms | compute ms | readback ms | upload % of total | verdict |
+|---|----------|-----------|-------------|-------------------|---------|
+| 100k | 0.16 | 0.00 | 0.58 | 22% | I/O & launch overhead dominate at tiny N |
+| 1M | 13.86 | 0.01 | 6.59 | 67% | upload already the majority cost |
+| 10M | 156.28 | 0.01 | 42.11 | 79% | upload grows linearly (×10 N → ×11 upload) |
+| 50M | 707.24 | 0.01 | 204.78 | 78% | compute launch is STILL 0.01ms — flat |
+| 100M | 1395.98 | 0.01 | 563.31 | 71% | upload scaling confirmed (×2 N → ×1.97 upload) |
+
+**Verdict: TRANSFER-BOUND, NOT compute-bound.**
+
+- **Compute is flat at 0.01ms** regardless of N. The GPU shader completes in O(1) time
+  after dispatch — it is not the bottleneck.
+- **Upload dominates**: at N ≥ 1M, host→device transfer accounts for 67–79% of wall time
+  and grows linearly with N (as expected for PCIe-bound bulk data movement).
+- **Readback** (which includes actual GPU compute + device→host transfer) also grows
+  linearly but is consistently 3–4× smaller than upload in absolute terms.
+
+**Implication for #24 (GPU kernel tuning): MUST remain BLOCKED.** Tuning kernel arithmetic,
+workgroup size, or occupancy optimizes a path that is already ~0.01ms. The bottleneck is
+the PCIe bus, not the shader. Higher-leverage work: pinned/zero-copy memory staging,
+asynchronous upload/compute overlap (double buffering), or fused multi-pass kernels to
+reduce total data in flight.
 
 ### rgb→hsl throughput (MP/s)
 
