@@ -19,10 +19,16 @@
 //! - s (0–100): absolute tolerance ≤ 1e-3
 //! - l (0–100): absolute tolerance ≤ 1e-3
 
+use color_convert_rs::hsl;
 use color_convert_rs::rgb;
 use color_convert_rs::simd_hsl;
 
 const HSL_TOLERANCE: f64 = 1e-3;
+/// Tolerance for RGB channel values (0–255) when comparing SIMD f32 against scalar f64.
+/// The `channel` function's piecewise linear interpolation involves values in [0,1]
+/// scaled by 255; f32 vs f64 precision gap is ~1e-7 in [0,1] → ~3e-5 in [0,255],
+/// well within this tolerance.
+const RGB_TOLERANCE: f64 = 1e-3;
 
 // ── Deterministic PRNG (mulberry32, seed=42) ─────────────────────────
 fn mulberry32(state: &mut u32) -> f64 {
@@ -139,6 +145,92 @@ fn rgb_to_hsl_batch_achromatic_and_edge_cases() {
                     scalar_val[chan],
                     diff,
                     HSL_TOLERANCE,
+                );
+            }
+        }
+    }
+}
+
+/// Behavior 3: `hsl_to_rgb_batch` (f32x8 SIMD) must match the scalar
+/// `hsl::rgb` (f64) within RGB_TOLERANCE (1e-3) for batches including
+/// non-multiples of the SIMD lane width (8).
+///
+/// Test strategy: generate RGB pixels, convert to HSL via scalar `rgb::hsl`,
+/// then run BOTH the scalar `hsl::rgb` and the SIMD `hsl_to_rgb_batch`
+/// on those HSL values and assert them equal per-channel.
+#[test]
+fn hsl_to_rgb_batch_matches_scalar() {
+    for n in [1, 7, 8, 15, 16, 100, 257] {
+        let pixels = generate_rgb_pixels(n);
+
+        // Scalar HSL (f64) from original RGB
+        let hsl_scalar: Vec<[f64; 3]> = pixels.iter().map(|&p| rgb::hsl(p)).collect();
+
+        // Scalar rgb reference: hsl→rgb via f64
+        let scalar_rgb: Vec<[f64; 3]> = hsl_scalar.iter().map(|&h| hsl::rgb(h)).collect();
+
+        // Convert HSL to f32 for SIMD input
+        let hsl_f32: Vec<[f32; 3]> = hsl_scalar
+            .iter()
+            .map(|&h| [h[0] as f32, h[1] as f32, h[2] as f32])
+            .collect();
+
+        let simd_result = simd_hsl::hsl_to_rgb_batch(&hsl_f32);
+
+        assert_eq!(
+            simd_result.len(),
+            scalar_rgb.len(),
+            "batch size mismatch for n={n}"
+        );
+
+        for (i, (simd_val, scalar_val)) in simd_result.iter().zip(scalar_rgb.iter()).enumerate() {
+            // Compile-time type check: simd_val MUST be [f32; 3]
+            let _f32_check: [f32; 3] = *simd_val;
+
+            for chan in 0..3 {
+                let diff = (simd_val[chan] as f64 - scalar_val[chan]).abs();
+                let chan_name = ["r", "g", "b"][chan];
+                assert!(
+                    diff <= RGB_TOLERANCE,
+                    "pixel {i} chan {chan_name}({chan}): simd(f32)={} scalar(f64)={} diff={:.2e} > tol={:.2e}",
+                    simd_val[chan],
+                    scalar_val[chan],
+                    diff,
+                    RGB_TOLERANCE,
+                );
+            }
+        }
+    }
+}
+
+/// Behavior 4: The simd round-trip `rgb → hsl → rgb` must reproduce the
+/// original u8 RGB values within a rounding tolerance of ±1.
+///
+/// Applies the SIMD pipeline: `hsl_to_rgb_batch(rgb_to_hsl_batch(rgb))`,
+/// rounds each channel to the nearest u8 (clamped to 0–255), and compares
+/// against the original input pixel.
+#[test]
+fn rgb_hsl_rgb_simd_roundtrip_matches_original() {
+    for n in [1, 7, 8, 15, 16, 100, 257] {
+        let pixels = generate_rgb_pixels(n);
+
+        let hsl_batch = simd_hsl::rgb_to_hsl_batch(&pixels);
+        let rgb_batch = simd_hsl::hsl_to_rgb_batch(&hsl_batch);
+
+        assert_eq!(rgb_batch.len(), pixels.len(), "batch size mismatch for n={n}");
+
+        for (i, (simd_rgb, orig)) in rgb_batch.iter().zip(pixels.iter()).enumerate() {
+            for chan in 0..3 {
+                let rounded = (simd_rgb[chan].round() as i32).clamp(0, 255) as u8;
+                let diff = (rounded as i32 - orig[chan] as i32).abs();
+                let chan_name = ["r", "g", "b"][chan];
+                assert!(
+                    diff <= 1,
+                    "pixel {i} chan {chan_name}({chan}): roundtrip={} original={} diff={} > 1 (simd_raw={})",
+                    rounded,
+                    orig[chan],
+                    diff,
+                    simd_rgb[chan],
                 );
             }
         }
