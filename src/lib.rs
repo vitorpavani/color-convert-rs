@@ -28,6 +28,7 @@ pub mod simd;
 pub mod simd_cmyk;
 pub mod simd_hsl;
 pub mod simd_hsv;
+pub mod simd_hwb;
 pub mod xyz;
 
 pub use convert::{Color, Model, convert, convert_rounded};
