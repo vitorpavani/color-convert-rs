@@ -86,15 +86,59 @@ rg '"route":"rgb->hsl"' benchmarks/results.jsonl | rg '"tier":"cpu"'
 
 ## Rollup table
 
-<!-- Derived from results.jsonl. N=100,000 pixels, best-of-N (20 timed, 3 warmup),
-     host: NVIDIA RTX 2000 Ada laptop. Higher MP/s is better. -->
+<!-- Scaling sweep (issue #23).  Host: NVIDIA RTX 2000 Ada laptop (NixOS).
+     CPU tier = wide::f64x4 SIMD batch (bench_simd).  GPU tier = CubeCL/wgpu (bench_gpu).
+     best-of-N wall time after GPU JIT / CPU cache warmup.  Higher MP/s is better.
+     JS at N=100M → OOM crash (GC wall). -->
 
-| route | js baseline | cpu | gpu (CubeCL) | cpu vs js | gpu vs js |
-|-------|-------------|-----|--------------|-----------|-----------|
-| rgb→lab | 7.24 MP/s | 8.33 MP/s | **14.01 MP/s** | 1.15× | **1.94×** |
-| rgb→hsl | 18.77 MP/s | 19.46 MP/s | — | 1.04× | — |
-| rgb→xyz | — | 24.65 MP/s (SIMD) | — | — | — |
+### rgb→lab throughput (MP/s) — the hot matrix + gamma + LAB-transfer route
 
-> GPU currently measured for `rgb→lab` (the matrix + gamma + LAB-transfer hot route). The GPU
-> beats both the JS baseline and the CPU-SIMD path → `decision:"kept"`. Numbers are single-host
-> snapshots for keep/revert decisions, not statistically rigorous criterion runs.
+| N | JS baseline | CPU SIMD (f64x4) | GPU (CubeCL) | gpu vs cpu | gpu vs js |
+|---|-------------|-----------------|--------------|------------|-----------|
+| 100k | 7.3 | 11.5 | 13.9 | 1.2× | 1.9× |
+| 1M | 7.1 | 10.8 | 26.9 | 2.5× | 3.8× |
+| 10M | 7.0 | 10.5 | 32.8 | 3.1× | 4.7× |
+| 50M | 6.1 | 10.8 | 34.9 | 3.2× | 5.7× |
+| 100M | OOM | 10.7 | 33.5 | 3.1× | — |
+
+### Key observations
+
+- **CPU SIMD throughput is flat** at ~10.8 MP/s across all N — predictable, no degradation.
+- **GPU throughput scales up** with N: 14→27→33→35 MP/s as batch size amortizes launch overhead,
+  plateauing at ~35 MP/s around N=50M.
+- **JS degrades** from 7.3→6.1 MP/s (GC pressure visible at N=50M), then **OOM crash** at N=100M.
+- **GPU crossover**: GPU beats CPU-SIMD even at N=100k (the smallest tested N). The real crossover
+  is at N < 100k (where GPU launch/setup overhead may make it slower — not measured here).
+- **Transfer-vs-compute**: Upload (host→device) consumes ~50% of GPU wall time across all N > 100k.
+  The kernel is **transfer-bound**, not compute-bound. Tuning kernel arithmetic alone will yield
+  diminishing returns; reducing transfer overhead (pinned memory, async overlap, fused ops) is
+  higher-leverage. See issue #23→#24 gate analysis below.
+- **GPU kernel panic** at N=10M before the 2-D launch grid fix (wgpu dispatch limit 65535 per
+  dimension); fixed in commit `970a7c4`.
+
+### rgb→hsl throughput (MP/s)
+
+| N | JS baseline | CPU (scalar) |
+|---|-------------|-------------|
+| 100k | 18.0 | — |
+| 1M | 18.2 | — |
+| 10M | 18.3 | — |
+| 50M | 14.3 | — |
+| 100M | OOM | — |
+
+> No GPU or SIMD path for rgb→hsl yet. JS shows GC-driven degradation at 50M (14.3 MP/s vs 18.3
+> at 10M). CPU scalar measurements are unreliable (compiler elimination suspected) — see bench
+> harness note in `AGENTS.md`.
+
+### rgb→xyz throughput (MP/s) — CPU SIMD
+
+| N | CPU SIMD (f64x4) |
+|---|-----------------|
+| 100k | 24.7 |
+| 1M | 24.5 |
+| 10M | 19.6 |
+| 50M | 20.4 |
+| 100M | 20.3 |
+
+> SIMD throughput for rgb→xyz is stable at 20–25 MP/s. No JS baseline available (JS
+> `color-convert.rgb.xyz` at 100k = 11.1 MP/s, 10M = 10.7 MP/s — SIMD is ~2× faster).
