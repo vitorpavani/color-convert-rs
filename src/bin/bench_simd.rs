@@ -20,9 +20,9 @@ use color_convert_rs::rgb;
 use color_convert_rs::simd;
 use color_convert_rs::simd_apple;
 use color_convert_rs::simd_cmyk;
+use color_convert_rs::simd_hcg;
 use color_convert_rs::simd_hsl;
 use color_convert_rs::simd_hsv;
-use color_convert_rs::simd_hcg;
 use color_convert_rs::simd_hwb;
 use color_convert_rs::simd_oklab;
 
