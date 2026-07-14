@@ -182,22 +182,56 @@ fn append_record(
     ctx: &BenchCtx,
     notes: &str,
 ) {
+    append_record_with_issue(route, best_ms, n, iters, warmup, ctx, notes, 23, "baseline", None);
+}
+
+fn append_record_25(
+    route: &str,
+    best_ms: f64,
+    n: usize,
+    iters: usize,
+    warmup: usize,
+    ctx: &BenchCtx,
+    notes: &str,
+    decision: &str,
+    baseline_ref: Option<&str>,
+) {
+    append_record_with_issue(route, best_ms, n, iters, warmup, ctx, notes, 25, decision, baseline_ref);
+}
+
+fn append_record_with_issue(
+    route: &str,
+    best_ms: f64,
+    n: usize,
+    iters: usize,
+    warmup: usize,
+    ctx: &BenchCtx,
+    notes: &str,
+    issue: u32,
+    decision: &str,
+    baseline_ref: Option<&str>,
+) {
     let throughput_mps = (n as f64 / 1_000_000.0) / (best_ms / 1000.0);
     let escaped_route = route.replace('\\', "\\\\").replace('"', "\\\"");
     let ts = utc_now_iso();
     let escaped_notes = notes.replace('\\', "\\\\").replace('"', "\\\"");
 
+    let b_ref = baseline_ref
+        .map(|br| format!(r#","baseline_ref":"{}""#, br))
+        .unwrap_or_default();
+
     let record = format!(
         concat!(
-            r#"{{"ts":"{ts}","commit":"{commit}","issue":23,"#,
+            r#"{{"ts":"{ts}","commit":"{commit}","issue":{issue},"#,
             r#""route":"{route}","tier":"cpu","input_size":{n},"#,
             r#""metric":"throughput_mpx_s","value":{mps:.2},"ms":{ms:.3},"#,
             r#""iters":{iters},"warmup":{warmup},"host":"{host}","#,
-            r#""gpu_present":{gp},"decision":"baseline","#,
+            r#""gpu_present":{gp},"decision":"{decision}"{b_ref},"#,
             r#""notes":"{notes}"}}"#,
         ),
         ts = ts,
         commit = ctx.commit,
+        issue = issue,
         route = escaped_route,
         n = n,
         mps = throughput_mps,
@@ -206,6 +240,8 @@ fn append_record(
         warmup = warmup,
         host = ctx.host,
         gp = ctx.gpu_present,
+        decision = decision,
+        b_ref = b_ref,
         notes = escaped_notes,
     );
 
@@ -225,6 +261,44 @@ fn rgb_to_xyz_simd(pixels: &[[u8; 3]]) -> Vec<[f32; 3]> {
 fn rgb_to_lab_simd(pixels: &[[u8; 3]]) -> Vec<[f32; 3]> {
     let xyz_batch = simd::rgb_to_xyz_batch(pixels);
     simd::xyz_to_lab_batch(&xyz_batch)
+}
+
+// ── SoA route definitions (AoS→SoA conversion IS timed) ──────────────────
+
+fn rgb_to_xyz_simd_soa(pixels: &[[u8; 3]]) -> Vec<[f32; 3]> {
+    let n = pixels.len();
+    let mut r = Vec::with_capacity(n);
+    let mut g = Vec::with_capacity(n);
+    let mut b = Vec::with_capacity(n);
+    for px in pixels {
+        r.push(px[0]);
+        g.push(px[1]);
+        b.push(px[2]);
+    }
+    simd::rgb_to_xyz_batch_soa(&r, &g, &b)
+}
+
+fn rgb_to_lab_simd_soa(pixels: &[[u8; 3]]) -> Vec<[f32; 3]> {
+    let n = pixels.len();
+    let mut r = Vec::with_capacity(n);
+    let mut g = Vec::with_capacity(n);
+    let mut b = Vec::with_capacity(n);
+    for px in pixels {
+        r.push(px[0]);
+        g.push(px[1]);
+        b.push(px[2]);
+    }
+    let xyz = simd::rgb_to_xyz_batch_soa(&r, &g, &b);
+    let n2 = xyz.len();
+    let mut x = Vec::with_capacity(n2);
+    let mut y = Vec::with_capacity(n2);
+    let mut z = Vec::with_capacity(n2);
+    for px in &xyz {
+        x.push(px[0]);
+        y.push(px[1]);
+        z.push(px[2]);
+    }
+    simd::xyz_to_lab_batch_soa(&x, &y, &z)
 }
 
 fn rgb_to_hsl_scalar(pixel: &[u8; 3]) {
@@ -319,6 +393,49 @@ fn main() {
         "rgb->lab", n, lab_ms, lab_mps
     );
 
+    // ── SoA routes (AoS→SoA conversion included in timing) ──────────────
+
+    // rgb→xyz (SoA SIMD batch)
+    let xyz_soa_ms = bench_batch(&pixels, warmup_iters, timed_iters, rgb_to_xyz_simd_soa);
+    let xyz_soa_mps = (n as f64 / 1e6) / (xyz_soa_ms / 1000.0);
+    append_record_25(
+        "rgb->xyz",
+        xyz_soa_ms,
+        n,
+        timed_iters,
+        warmup_iters,
+        &ctx,
+        &format!("wide::f32x8 SoA SIMD batch (+AoS→SoA transpose), N={}", format_number(n)),
+        "baseline",
+        None,
+    );
+    println!(
+        "{:<18}  N={:>8}  best={:>9.3} ms  {:>10.1} MP/s  [SoA]",
+        "rgb->xyz (soa)", n, xyz_soa_ms, xyz_soa_mps
+    );
+
+    // rgb→lab (SoA SIMD: SoA xyz → SoA lab chain)
+    let lab_soa_ms = bench_batch(&pixels, warmup_iters, timed_iters, rgb_to_lab_simd_soa);
+    let lab_soa_mps = (n as f64 / 1e6) / (lab_soa_ms / 1000.0);
+    append_record_25(
+        "rgb->lab",
+        lab_soa_ms,
+        n,
+        timed_iters,
+        warmup_iters,
+        &ctx,
+        &format!(
+            "wide::f32x8 SoA SIMD batch (+AoS→SoA transposes), N={}",
+            format_number(n)
+        ),
+        "baseline",
+        None,
+    );
+    println!(
+        "{:<18}  N={:>8}  best={:>9.3} ms  {:>10.1} MP/s  [SoA]",
+        "rgb->lab (soa)", n, lab_soa_ms, lab_soa_mps
+    );
+
     // ── Scalar routes (for reference) ──────────────────────────────────
 
     // rgb→hsl (scalar per-pixel)
@@ -337,5 +454,5 @@ fn main() {
         "rgb->hsl->rgb", n, hslrgb_ms, hslrgb_mps
     );
 
-    println!("\nAppended 2 SIMD records to {}", RESULTS_PATH);
+    println!("\nAppended 4 records (2 AoS + 2 SoA) to {}", RESULTS_PATH);
 }
