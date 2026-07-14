@@ -217,7 +217,11 @@ fn rgb_hsl_rgb_simd_roundtrip_matches_original() {
         let hsl_batch = simd_hsl::rgb_to_hsl_batch(&pixels);
         let rgb_batch = simd_hsl::hsl_to_rgb_batch(&hsl_batch);
 
-        assert_eq!(rgb_batch.len(), pixels.len(), "batch size mismatch for n={n}");
+        assert_eq!(
+            rgb_batch.len(),
+            pixels.len(),
+            "batch size mismatch for n={n}"
+        );
 
         for (i, (simd_rgb, orig)) in rgb_batch.iter().zip(pixels.iter()).enumerate() {
             for chan in 0..3 {
