@@ -347,14 +347,19 @@ reduce total data in flight.
 previous Rust iteration (JS baselines for rgb→cmyk, rgb→hwb and rgb→oklab were backfilled by wiring
 those routes into `benchmarks/js/bench.mjs`); every dropped change is recorded as a negative result.
 
-> **Self-improvement drive concluding after wave 5.** Every numeric RGB-source route with a
-> non-trivial per-pixel body now has a vectorized f32x8 path (hsl, hsv, hwb, cmyk, hcg, lab, xyz,
-> oklab, the hsl↔rgb round-trip, and even the trivial apple scale). The remaining unported routes
-> are lookups/quantizers (hex, keyword, ansi16/256, gray) where SIMD offers little, or the
-> transfer-bound GPU path (see the #24 analysis) whose bottleneck is PCIe, not compute. Further
-> waves would increasingly produce *drops* rather than *keeps* — the honest signal that the
-> CPU-SIMD improvement surface is effectively exhausted. See
-> [[docs/ARCHITECTURE_REVIEW|the architecture review]] for the full review.
+> **Self-improvement drive concluding after wave 5** (user-scoped). Every numeric RGB-*source*
+> route with a non-trivial per-pixel body now has a vectorized f32x8 path (hsl, hsv, hwb, cmyk, hcg,
+> lab, xyz, oklab, the hsl↔rgb round-trip, and even the trivial apple scale) — the **forward hot
+> path is fully covered**. Genuine SIMD candidates DO remain on the **inverse (X→rgb) / cross-space
+> routes** — `xyz→rgb`, `lab→xyz`, `oklab→rgb` (high value: matrix + gamma/cube), `hsv→rgb`,
+> `hcg→rgb` (moderate: branchy channel selection) — which reuse the same f32x8 patterns already
+> proven forward; the bench harness would first need inverse-route baselines wired. What is
+> genuinely *not* worth SIMD is lookups/quantizers (hex, keyword, ansi16/256, gray) and the tiny
+> lch/oklch wrappers; and the GPU path is transfer-bound (see the #24 analysis), PCIe not compute.
+> Since the forward surface is done and the drive was scoped to end at wave 5, further *forward*
+> waves would produce *drops* rather than *keeps*. See
+> [[docs/ARCHITECTURE_REVIEW|the architecture review]] for the full review (§4 lists the inverse-route
+> work as future scope).
 
 ## See also
 

@@ -135,10 +135,13 @@ for the branchy hue routes).
 ## 4. Residual / future opportunities
 
 > [!note] The self-improvement drive is concluding after wave 5
-> The CPU-SIMD improvement surface is now effectively exhausted: every numeric RGB-source route
-> with a non-trivial per-pixel body has a vectorized f32x8 path (hsl, hsv, hwb, cmyk, hcg, lab, xyz,
-> oklab, the hsl↔rgb round-trip, and even the trivial apple scale). What remains is lower-leverage
-> or higher-risk, so **further waves would increasingly produce drops rather than keeps**.
+> The **forward (rgb→X) CPU-SIMD surface is exhausted**: every numeric RGB-*source* route with a
+> non-trivial per-pixel body has a vectorized f32x8 path (hsl, hsv, hwb, cmyk, hcg, lab, xyz, oklab,
+> the hsl↔rgb round-trip, and even the trivial apple scale). Genuine SIMD candidates DO remain on
+> the **inverse (X→rgb) and cross-space routes** (see item 2 below) — but the user scoped this drive
+> to end at wave 5, and the forward hot path (the routes the JS baseline and real callers exercise
+> most) is fully covered, so **further forward-route waves would increasingly produce drops rather
+> than keeps**. The inverse-route work is real future scope, not a hidden gap.
 
 Listed for any future drive:
 
@@ -146,18 +149,26 @@ Listed for any future drive:
    double-buffered async upload/compute overlap — attacks the real (transfer) bottleneck. This is
    the single highest-leverage remaining item, but it is hardware-bound and risky. See
    [[concepts/gpu-transfer-bound-kernel]].
-2. **SIMD for the remaining scalar routes**: `hsv` (`#71`), `cmyk` (`#72`), `hwb` (`#78`),
-   `oklab` (`#79`), `hcg` (`#87`) and `apple` (`#86`) are now done. What is left is
-   lookups/quantizers (`hex`, `keyword`, `ansi16`/`ansi256`, `gray`) where SIMD offers little, and
-   `lch`/`oklch` (small routes).
+2. **SIMD for the remaining routes**:
+   - **Forward (rgb→X)** — DONE: `hsl` (`#58`), `hsv` (`#71`), `hwb` (`#78`), `cmyk` (`#72`),
+     `xyz`/`lab` (`#51`/`#65`), `oklab` (`#79`), `hcg` (`#87`), `apple` (`#86`).
+   - **Inverse (X→rgb) and cross-space — NOT yet done, genuine candidates**: `xyz→rgb`
+     (3×3 matrix + sRGB gamma — high value), `lab→xyz` (piecewise inverse cube + matrix — high),
+     `oklab→rgb` (dual matrix + cube + sRGB gamma — high), `hsv→rgb` and `hcg→rgb` (branchy channel
+     selection — moderate). These are the same math families already vectorized in the forward
+     direction, so the f32x8 mask-blend / vectorized-transfer patterns transfer directly. The bench
+     harness does not yet measure inverse routes, so wiring those baselines is a prerequisite.
+   - **Correctly excluded** (SIMD offers little / no arithmetic): lookups/quantizers `hex`,
+     `keyword`, `ansi16`/`ansi256`, `gray`, and the tiny `lch`/`oklch` wrappers.
 3. **GPU-tier coverage for the new SIMD routes**: every wave-1–5 CPU-SIMD record is
    `gpu_present:false` — the new routes have no GPU kernel and no `tier:"gpu"` measurement. Only
    `rgb→lab` has a GPU path. A future wave could add GPU kernels (or at least record GPU-tier
    numbers via `run-bench-gpu.sh`) for parity.
 4. **Fused multi-hop `convert` for SIMD batches**: the BFS `Graph` chains scalar adapters; a
    batch fast-path for common multi-hop routes could avoid per-hop materialization.
-5. **`find_path` has no covering test** (flagged by codegraph); the routing graph is exercised
-   only indirectly via `convert`. A direct BFS-path unit test would harden it.
+5. **`find_path` direct test** — DONE (`tests/find_path.rs`, PR #94): the BFS routing core is now
+   covered directly (identity, direct edge, shortest multi-hop path, cache stability, and full
+   17-model strong-connectivity), not only indirectly via `convert`.
 
 ---
 
