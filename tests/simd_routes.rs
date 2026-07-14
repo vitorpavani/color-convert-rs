@@ -81,6 +81,75 @@ fn rgb_to_xyz_batch_matches_scalar() {
     }
 }
 
+/// Behavior 3: `rgb_to_xyz_batch_soa` (SoA SIMD) must produce identical
+/// f32 output to `rgb_to_xyz_batch` (AoS SIMD) for the same pixels.
+/// SoA input slices are de-interleaved from the same AoS pixel batch.
+/// Tests non-multiples of the SIMD lane width (8) to verify tail handling.
+#[test]
+fn rgb_to_xyz_batch_soa_matches_aos() {
+    for n in [1, 3, 7, 8, 15, 16, 100, 257] {
+        let pixels = generate_rgb_pixels(n);
+        // De-interleave AoS → SoA
+        let r: Vec<u8> = pixels.iter().map(|p| p[0]).collect();
+        let g: Vec<u8> = pixels.iter().map(|p| p[1]).collect();
+        let b: Vec<u8> = pixels.iter().map(|p| p[2]).collect();
+
+        let aos_result = simd::rgb_to_xyz_batch(&pixels);
+        let soa_result = simd::rgb_to_xyz_batch_soa(&r, &g, &b);
+
+        assert_eq!(
+            soa_result.len(),
+            aos_result.len(),
+            "batch size mismatch for n={n}"
+        );
+
+        for (i, (soa_val, aos_val)) in soa_result.iter().zip(aos_result.iter()).enumerate() {
+            for chan in 0..3 {
+                // Exact f32 bit equality expected: same math, same types.
+                assert_eq!(
+                    soa_val[chan], aos_val[chan],
+                    "pixel {i} channel {chan}: soa={} aos={} differ for n={n}",
+                    soa_val[chan], aos_val[chan],
+                );
+            }
+        }
+    }
+}
+
+/// Behavior 4: `xyz_to_lab_batch_soa` (SoA SIMD) must produce identical
+/// f32 output to `xyz_to_lab_batch` (AoS SIMD) for the same XYZ pixels.
+#[test]
+fn xyz_to_lab_batch_soa_matches_aos() {
+    for n in [1, 3, 7, 8, 15, 16, 100, 257] {
+        let rgb_pixels = generate_rgb_pixels(n);
+        // Generate f32 XYZ via the AoS SIMD batch
+        let xyz_aos = simd::rgb_to_xyz_batch(&rgb_pixels);
+        // De-interleave XYZ AoS → SoA
+        let x: Vec<f32> = xyz_aos.iter().map(|p| p[0]).collect();
+        let y: Vec<f32> = xyz_aos.iter().map(|p| p[1]).collect();
+        let z: Vec<f32> = xyz_aos.iter().map(|p| p[2]).collect();
+
+        let aos_result = simd::xyz_to_lab_batch(&xyz_aos);
+        let soa_result = simd::xyz_to_lab_batch_soa(&x, &y, &z);
+
+        assert_eq!(
+            soa_result.len(),
+            aos_result.len(),
+            "batch size mismatch for n={n}"
+        );
+
+        for (i, (soa_val, aos_val)) in soa_result.iter().zip(aos_result.iter()).enumerate() {
+            for chan in 0..3 {
+                assert_eq!(
+                    soa_val[chan], aos_val[chan],
+                    "pixel {i} channel {chan}: soa={} aos={} differ for n={n}",
+                    soa_val[chan], aos_val[chan],
+                );
+            }
+        }
+    }
+}
+
 /// Behavior 2: `xyz_to_lab_batch` (f32x8 SIMD) must match the scalar
 /// `xyz::lab` (f64) within LAB_TOLERANCE (1e-3). XYZ inputs are generated
 /// from the deterministic RGB batch via `rgb::xyz` to exercise the full
