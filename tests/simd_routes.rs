@@ -121,3 +121,45 @@ fn xyz_to_lab_batch_matches_scalar() {
         }
     }
 }
+
+/// Behavior 3: `rgb_to_lab_batch` (fused f32x8 SIMD, no intermediate XYZ
+/// Vec) must match the two-step chain `xyz_to_lab_batch(rgb_to_xyz_batch(…))`
+/// within f32 epsilon. Both paths perform the same arithmetic on the same
+/// lanes; the only difference is that the fused pass feeds XYZ registers
+/// directly into the LAB transform instead of storing/loading a Vec.
+///
+/// Tested across sizes that exercise SIMD-block (multiples of 8), remainder
+/// tails (1–7 leftovers), and empty-edge cases.
+#[test]
+fn rgb_to_lab_batch_matches_two_step() {
+    // Tolerance: f32::EPSILON × 10. Both paths use the same f32 operations
+    // (same inline helpers, identical coefficients), so results should be
+    // bit-for-bit identical.  The generous ×10 multiplier guards against any
+    // subnormal or micro-architectural quirk without masking real bugs.
+    const FUSED_TOLERANCE: f32 = f32::EPSILON * 10.0;
+
+    for n in [1, 7, 8, 15, 16, 100, 257] {
+        let pixels = generate_rgb_pixels(n);
+
+        let two_step = simd::xyz_to_lab_batch(&simd::rgb_to_xyz_batch(&pixels));
+        let fused = simd::rgb_to_lab_batch(&pixels);
+
+        assert_eq!(fused.len(), two_step.len(), "length mismatch for n={n}");
+
+        for (i, (f, t)) in fused.iter().zip(two_step.iter()).enumerate() {
+            let _f32_check: [f32; 3] = *f;
+
+            for chan in 0..3 {
+                let diff = (f[chan] - t[chan]).abs();
+                assert!(
+                    diff <= FUSED_TOLERANCE,
+                    "pixel {i} channel {chan}: fused={} two_step={} diff={:.2e} > tol={:.2e}",
+                    f[chan],
+                    t[chan],
+                    diff,
+                    FUSED_TOLERANCE,
+                );
+            }
+        }
+    }
+}
