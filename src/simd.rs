@@ -285,3 +285,241 @@ pub fn xyz_to_lab_batch(xyz: &[[f32; 3]]) -> Vec<[f32; 3]> {
 
     result
 }
+
+/// SoA variant of [`rgb_to_xyz_batch`] accepting de-interleaved channel slices.
+///
+/// `r`, `g`, `b` must have equal length. Each slice holds the values for one
+/// channel across all pixels: `r[i]` is the red channel of pixel `i`.
+/// Enables contiguous 8-element loads per channel without scatter/gather.
+pub fn rgb_to_xyz_batch_soa(r: &[u8], g: &[u8], b: &[u8]) -> Vec<[f32; 3]> {
+    use wide::f32x8;
+
+    assert_eq!(r.len(), g.len());
+    assert_eq!(g.len(), b.len());
+    let n = r.len();
+    let mut result = Vec::with_capacity(n);
+    let mut i = 0;
+
+    while i + 7 < n {
+        let r_simd = f32x8::new([
+            r[i] as f32,
+            r[i + 1] as f32,
+            r[i + 2] as f32,
+            r[i + 3] as f32,
+            r[i + 4] as f32,
+            r[i + 5] as f32,
+            r[i + 6] as f32,
+            r[i + 7] as f32,
+        ]);
+        let g_simd = f32x8::new([
+            g[i] as f32,
+            g[i + 1] as f32,
+            g[i + 2] as f32,
+            g[i + 3] as f32,
+            g[i + 4] as f32,
+            g[i + 5] as f32,
+            g[i + 6] as f32,
+            g[i + 7] as f32,
+        ]);
+        let b_simd = f32x8::new([
+            b[i] as f32,
+            b[i + 1] as f32,
+            b[i + 2] as f32,
+            b[i + 3] as f32,
+            b[i + 4] as f32,
+            b[i + 5] as f32,
+            b[i + 6] as f32,
+            b[i + 7] as f32,
+        ]);
+
+        let r_norm = r_simd / f32x8::splat(255.0);
+        let g_norm = g_simd / f32x8::splat(255.0);
+        let b_norm = b_simd / f32x8::splat(255.0);
+
+        let r_arr = r_norm.to_array();
+        let g_arr = g_norm.to_array();
+        let b_arr = b_norm.to_array();
+        let r_lin = f32x8::new([
+            srgb_inv_f32(r_arr[0]),
+            srgb_inv_f32(r_arr[1]),
+            srgb_inv_f32(r_arr[2]),
+            srgb_inv_f32(r_arr[3]),
+            srgb_inv_f32(r_arr[4]),
+            srgb_inv_f32(r_arr[5]),
+            srgb_inv_f32(r_arr[6]),
+            srgb_inv_f32(r_arr[7]),
+        ]);
+        let g_lin = f32x8::new([
+            srgb_inv_f32(g_arr[0]),
+            srgb_inv_f32(g_arr[1]),
+            srgb_inv_f32(g_arr[2]),
+            srgb_inv_f32(g_arr[3]),
+            srgb_inv_f32(g_arr[4]),
+            srgb_inv_f32(g_arr[5]),
+            srgb_inv_f32(g_arr[6]),
+            srgb_inv_f32(g_arr[7]),
+        ]);
+        let b_lin = f32x8::new([
+            srgb_inv_f32(b_arr[0]),
+            srgb_inv_f32(b_arr[1]),
+            srgb_inv_f32(b_arr[2]),
+            srgb_inv_f32(b_arr[3]),
+            srgb_inv_f32(b_arr[4]),
+            srgb_inv_f32(b_arr[5]),
+            srgb_inv_f32(b_arr[6]),
+            srgb_inv_f32(b_arr[7]),
+        ]);
+
+        let x = r_lin * f32x8::splat(0.4124564)
+            + g_lin * f32x8::splat(0.3575761)
+            + b_lin * f32x8::splat(0.1804375);
+        let y = r_lin * f32x8::splat(0.2126729)
+            + g_lin * f32x8::splat(0.7151522)
+            + b_lin * f32x8::splat(0.0721750);
+        let z = r_lin * f32x8::splat(0.0193339)
+            + g_lin * f32x8::splat(0.119_192)
+            + b_lin * f32x8::splat(0.9503041);
+
+        let x_arr = x.to_array();
+        let y_arr = y.to_array();
+        let z_arr = z.to_array();
+
+        for j in 0..8 {
+            result.push([x_arr[j] * 100.0, y_arr[j] * 100.0, z_arr[j] * 100.0]);
+        }
+
+        i += 8;
+    }
+
+    // Scalar remainder — delegate to f64 scalar, convert to f32.
+    while i < n {
+        let pixel = [r[i], g[i], b[i]];
+        let f64_result = crate::rgb::xyz(pixel);
+        result.push([
+            f64_result[0] as f32,
+            f64_result[1] as f32,
+            f64_result[2] as f32,
+        ]);
+        i += 1;
+    }
+
+    result
+}
+
+/// SoA variant of [`xyz_to_lab_batch`] accepting de-interleaved channel slices.
+///
+/// `x`, `y`, `z` must have equal length. Each slice holds the values for one
+/// channel across all pixels. Enables contiguous 8-element loads per channel
+/// without scatter/gather.
+pub fn xyz_to_lab_batch_soa(x: &[f32], y: &[f32], z: &[f32]) -> Vec<[f32; 3]> {
+    use wide::f32x8;
+
+    assert_eq!(x.len(), y.len());
+    assert_eq!(y.len(), z.len());
+    let n = x.len();
+    let mut result = Vec::with_capacity(n);
+    let mut i = 0;
+
+    let xn = f32x8::splat(95.047);
+    let yn = f32x8::splat(100.0);
+    let zn = f32x8::splat(108.883);
+
+    while i + 7 < n {
+        let x_simd = f32x8::new([
+            x[i],
+            x[i + 1],
+            x[i + 2],
+            x[i + 3],
+            x[i + 4],
+            x[i + 5],
+            x[i + 6],
+            x[i + 7],
+        ]);
+        let y_simd = f32x8::new([
+            y[i],
+            y[i + 1],
+            y[i + 2],
+            y[i + 3],
+            y[i + 4],
+            y[i + 5],
+            y[i + 6],
+            y[i + 7],
+        ]);
+        let z_simd = f32x8::new([
+            z[i],
+            z[i + 1],
+            z[i + 2],
+            z[i + 3],
+            z[i + 4],
+            z[i + 5],
+            z[i + 6],
+            z[i + 7],
+        ]);
+
+        let x_norm = x_simd / xn;
+        let y_norm = y_simd / yn;
+        let z_norm = z_simd / zn;
+
+        let x_arr = x_norm.to_array();
+        let y_arr = y_norm.to_array();
+        let z_arr = z_norm.to_array();
+        let fx = f32x8::new([
+            lab_transfer_f32(x_arr[0]),
+            lab_transfer_f32(x_arr[1]),
+            lab_transfer_f32(x_arr[2]),
+            lab_transfer_f32(x_arr[3]),
+            lab_transfer_f32(x_arr[4]),
+            lab_transfer_f32(x_arr[5]),
+            lab_transfer_f32(x_arr[6]),
+            lab_transfer_f32(x_arr[7]),
+        ]);
+        let fy = f32x8::new([
+            lab_transfer_f32(y_arr[0]),
+            lab_transfer_f32(y_arr[1]),
+            lab_transfer_f32(y_arr[2]),
+            lab_transfer_f32(y_arr[3]),
+            lab_transfer_f32(y_arr[4]),
+            lab_transfer_f32(y_arr[5]),
+            lab_transfer_f32(y_arr[6]),
+            lab_transfer_f32(y_arr[7]),
+        ]);
+        let fz = f32x8::new([
+            lab_transfer_f32(z_arr[0]),
+            lab_transfer_f32(z_arr[1]),
+            lab_transfer_f32(z_arr[2]),
+            lab_transfer_f32(z_arr[3]),
+            lab_transfer_f32(z_arr[4]),
+            lab_transfer_f32(z_arr[5]),
+            lab_transfer_f32(z_arr[6]),
+            lab_transfer_f32(z_arr[7]),
+        ]);
+
+        let l = fy * f32x8::splat(116.0) - f32x8::splat(16.0);
+        let a = (fx - fy) * f32x8::splat(500.0);
+        let b_simd = (fy - fz) * f32x8::splat(200.0);
+
+        let l_arr = l.to_array();
+        let a_arr = a.to_array();
+        let b_arr = b_simd.to_array();
+
+        for j in 0..8 {
+            result.push([l_arr[j], a_arr[j], b_arr[j]]);
+        }
+
+        i += 8;
+    }
+
+    // Scalar remainder — delegate to f64 scalar, convert to f32.
+    while i < n {
+        let f64_input = [x[i] as f64, y[i] as f64, z[i] as f64];
+        let f64_result = crate::xyz::lab(f64_input);
+        result.push([
+            f64_result[0] as f32,
+            f64_result[1] as f32,
+            f64_result[2] as f32,
+        ]);
+        i += 1;
+    }
+
+    result
+}
