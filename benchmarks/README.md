@@ -4,8 +4,10 @@ This directory holds the head-to-head benchmark harness and the **committed, app
 ledger** that proves whether the port is improving. See `AGENTS.md` → "Measurement discipline" and
 skill `benchmark-ledger` for the rules.
 
-> **Scaffold phase:** only structure + schema live here. The runners (`js/`, Rust `bench`) are built
-> during the coding session, driven by their own issues. No runner code exists yet.
+> The harness is live: the JS runner (`js/bench.mjs`), the Rust `bench` / `bench_simd` binaries,
+> and the GPU runner (`bench_gpu` via `run-bench-gpu.sh`) all write to `results.jsonl`. The
+> rollup below reflects the CPU-SIMD self-improvement waves (issues #58–#79); see
+> [`docs/ARCHITECTURE_REVIEW.md`](../docs/ARCHITECTURE_REVIEW.md) for the full review.
 
 ## The three tiers
 
