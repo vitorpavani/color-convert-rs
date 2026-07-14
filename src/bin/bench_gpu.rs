@@ -57,27 +57,37 @@ fn generate_pixels(n: usize) -> Vec<[u8; 3]> {
 
 // ── Best-of-N timing for batch GPU ─────────────────────────────────────
 // Warmup calls prime the GPU kernel JIT. Then N timed iterations run with
-// best-of-N wall time.
-fn benchmark_gpu(pixels: &[[u8; 3]], warmup: u32, iters: u32) -> Option<f64> {
-    // Warmup — triggers CubeCL JIT compilation
+// best-of-N wall time. Returns total wall time + per-phase breakdown.
+fn benchmark_gpu(
+    pixels: &[[u8; 3]],
+    warmup: u32,
+    iters: u32,
+) -> Option<(f64, color_convert_rs::gpu::GpuBatchTimings)> {
+    // Warmup — triggers CubeCL JIT compilation (use the untimed variant)
     for _ in 0..warmup {
         let _ = color_convert_rs::gpu::rgb_to_lab_gpu_batch(pixels);
     }
 
     let mut best_ns = u128::MAX;
+    let mut best_timings: Option<color_convert_rs::gpu::GpuBatchTimings> = None;
+
     for _ in 0..iters {
         let start = Instant::now();
-        let result = color_convert_rs::gpu::rgb_to_lab_gpu_batch(pixels);
+        let result = color_convert_rs::gpu::rgb_to_lab_gpu_batch_timed(pixels);
         let elapsed = start.elapsed().as_nanos();
 
-        let _ = result.as_ref()?;
-
-        if elapsed < best_ns {
-            best_ns = elapsed;
+        match result {
+            Some((_vec, timings)) => {
+                if elapsed < best_ns {
+                    best_ns = elapsed;
+                    best_timings = Some(timings);
+                }
+            }
+            None => return None,
         }
     }
 
-    Some(best_ns as f64 / 1_000_000.0)
+    best_timings.map(|t| (best_ns as f64 / 1_000_000.0, t))
 }
 
 // ── Helpers for JSONL record fields ────────────────────────────────────
@@ -128,7 +138,14 @@ fn format_number(n: usize) -> String {
     result
 }
 
-fn append_gpu_record(route: &str, best_ms: f64, n: usize, iters: u32, warmup: u32) {
+fn append_gpu_record(
+    route: &str,
+    best_ms: f64,
+    n: usize,
+    iters: u32,
+    warmup: u32,
+    timings: &color_convert_rs::gpu::GpuBatchTimings,
+) {
     let throughput_mps = (n as f64 / 1_000_000.0) / (best_ms / 1000.0);
 
     let escaped_route = route.replace('\\', "\\\\").replace('"', "\\\"");
@@ -137,14 +154,23 @@ fn append_gpu_record(route: &str, best_ms: f64, n: usize, iters: u32, warmup: u3
     let host = hostname();
     let gpu_present = true; // We only reach here if a GPU is present.
 
+    let timing_notes = format!(
+        "CubeCL/wgpu GPU kernel rgb->lab batch on NVIDIA RTX 2000 Ada; N={}; upload={:.2}ms compute={:.2}ms readback={:.2}ms",
+        format_number(n),
+        timings.upload_ms,
+        timings.compute_ms,
+        timings.readback_ms,
+    );
+    let escaped_notes = timing_notes.replace('\\', "\\\\").replace('"', "\\\"");
+
     let record = format!(
         concat!(
-            r#"{{"ts":"{ts}","commit":"{commit}","issue":48,"#,
+            r#"{{"ts":"{ts}","commit":"{commit}","issue":23,"#,
             r#""route":"{route}","tier":"gpu","input_size":{n},"#,
             r#""metric":"throughput_mpx_s","value":{mps:.2},"ms":{ms:.3},"#,
             r#""iters":{iters},"warmup":{warmup},"host":"{host}","#,
-            r#""gpu_present":{gp},"decision":"kept","#,
-            r#""notes":"CubeCL/wgpu GPU kernel rgb->lab batch on NVIDIA RTX 2000 Ada; beats CPU-SIMD and JS baseline, N={n_human}"}}"#,
+            r#""gpu_present":{gp},"decision":"baseline","#,
+            r#""notes":"{notes}"}}"#,
         ),
         ts = ts,
         commit = commit,
@@ -156,7 +182,7 @@ fn append_gpu_record(route: &str, best_ms: f64, n: usize, iters: u32, warmup: u3
         warmup = warmup,
         host = host,
         gp = gpu_present,
-        n_human = format_number(n),
+        notes = escaped_notes,
     );
 
     let mut file = OpenOptions::new()
@@ -200,10 +226,10 @@ fn main() {
             eprintln!("ERROR: GPU became unavailable during benchmark — no record written");
             std::process::exit(1);
         }
-        Some(best_ms) => {
+        Some((best_ms, timings)) => {
             let throughput_mps = (n as f64 / 1_000_000.0) / (best_ms / 1000.0);
 
-            append_gpu_record(route, best_ms, n, iters, warmup);
+            append_gpu_record(route, best_ms, n, iters, warmup, &timings);
 
             println!(
                 "{route:<18}  N={n:>8}  best={ms:>9.3} ms  {mps:>10.1} MP/s",
@@ -211,6 +237,12 @@ fn main() {
                 n = n,
                 ms = best_ms,
                 mps = throughput_mps,
+            );
+            println!(
+                "  upload={up:.2}ms  compute={cp:.2}ms  readback={rb:.2}ms",
+                up = timings.upload_ms,
+                cp = timings.compute_ms,
+                rb = timings.readback_ms,
             );
 
             println!("\nAppended 1 record to {}", RESULTS_PATH);

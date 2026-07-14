@@ -36,6 +36,8 @@
 //! accounts for the f32→f64 precision loss on the piecewise LAB transfer
 //! function and the matrix multiply.  See the correctness-gate test.
 
+use std::time::Instant;
+
 use cubecl::prelude::*;
 
 // ── CubeCL wgpu runtime types ──────────────────────────────────────────
@@ -169,6 +171,34 @@ fn rgb_to_lab_kernel(input: &Array<f32>, output: &mut Array<f32>, n_pixels: usiz
 // items from a `#[cube]` kernel context — the kernel needs to be a single
 // compilation unit for the WGSL/SPIR-V codegen.
 
+// ── Launch grid helper ─────────────────────────────────────────────────
+// wgpu limits each dispatch dimension to 65535. For large N we split into
+// a 2-D grid so the per-dimension block count stays within the limit.
+// ABSOLUTE_POS in the kernel is a scalar linear index that works correctly
+// with any grid dimensionality.
+
+const MAX_DISPATCH_DIM: u32 = 65535;
+const BLOCK_SIZE: u32 = 64;
+
+fn compute_launch_grid(n_pixels: usize) -> (CubeCount, CubeDim) {
+    let n_u32: u32 = u32::try_from(n_pixels).unwrap_or(u32::MAX);
+    let total_blocks = n_u32.div_ceil(BLOCK_SIZE);
+
+    if total_blocks <= MAX_DISPATCH_DIM {
+        (CubeCount::new_1d(total_blocks), CubeDim::new_1d(BLOCK_SIZE))
+    } else {
+        // 2-D split: both dims ≤ 65535, product ≥ total_blocks
+        let grid_y = total_blocks
+            .div_ceil(MAX_DISPATCH_DIM)
+            .min(MAX_DISPATCH_DIM);
+        let grid_x = total_blocks.div_ceil(grid_y).min(MAX_DISPATCH_DIM);
+        (
+            CubeCount::new_2d(grid_x, grid_y),
+            CubeDim::new_2d(BLOCK_SIZE, 1),
+        )
+    }
+}
+
 // ── Host-side launch harness ──────────────────────────────────────────
 
 /// Converts a batch of `[u8; 3]` RGB pixels to CIELAB `[f32; 3]` using
@@ -218,9 +248,7 @@ pub fn rgb_to_lab_gpu_batch(rgb: &[[u8; 3]]) -> Option<Vec<[f32; 3]>> {
     let out_handle = client.empty(n_float * size_of::<f32>());
 
     // ── Launch configuration ────────────────────────────────────────
-    let cube_dim = CubeDim::new_1d(64);
-    let n_u32: u32 = u32::try_from(n).unwrap_or(u32::MAX);
-    let cube_count = CubeCount::new_1d(n_u32.div_ceil(cube_dim.x));
+    let (cube_count, cube_dim) = compute_launch_grid(n);
 
     // SAFETY: The kernel launch is unsafe per the CubeCL API because the
     // runtime cannot statically verify that the ArrayArg handles match the
@@ -256,4 +284,115 @@ pub fn rgb_to_lab_gpu_batch(rgb: &[[u8; 3]]) -> Option<Vec<[f32; 3]>> {
     }
 
     Some(result)
+}
+
+// ── GPU batch timing breakdown ─────────────────────────────────────────
+
+/// Phase timing breakdown for a GPU batch conversion.
+/// All fields are milliseconds, measured via `std::time::Instant`.
+#[derive(Debug, Clone, Copy)]
+pub struct GpuBatchTimings {
+    /// Host→device upload (create_from_slice + empty allocation)
+    pub upload_ms: f64,
+    /// Kernel launch + execution on the GPU (synchronous launch)
+    pub compute_ms: f64,
+    /// Device→host read-back (read_one)
+    pub readback_ms: f64,
+}
+
+/// Like [`rgb_to_lab_gpu_batch`] but returns per-phase timings alongside
+/// the result, so the benchmark harness can distinguish transfer-bound vs
+/// compute-bound behaviour as N scales.
+///
+/// # Timing methodology
+///
+/// Timing is done with `std::time::Instant` around each phase. The kernel
+/// launch is synchronous in CubeCL 0.10 (the launch call blocks until the
+/// GPU completes), so `compute_ms` includes both dispatch overhead and
+/// actual GPU execution time.  Host↔device transfers are PCIe-bus timing.
+///
+/// # Return value
+///
+/// - `None` when no GPU is available.
+/// - `Some((Vec<[f32; 3]>, GpuBatchTimings))` when the kernel completed.
+pub fn rgb_to_lab_gpu_batch_timed(rgb: &[[u8; 3]]) -> Option<(Vec<[f32; 3]>, GpuBatchTimings)> {
+    let n = rgb.len();
+    if n == 0 {
+        return Some((
+            Vec::new(),
+            GpuBatchTimings {
+                upload_ms: 0.0,
+                compute_ms: 0.0,
+                readback_ms: 0.0,
+            },
+        ));
+    }
+
+    if crate::probe::probe() != crate::probe::Backend::Gpu {
+        return None;
+    }
+
+    let client =
+        std::panic::catch_unwind(|| WgpuRuntime::client(&WgpuDevice::DefaultDevice)).ok()?;
+
+    let n_float = n * 3;
+    let mut flat_input: Vec<f32> = Vec::with_capacity(n_float);
+    for pixel in rgb {
+        flat_input.push(f32::from(pixel[0]));
+        flat_input.push(f32::from(pixel[1]));
+        flat_input.push(f32::from(pixel[2]));
+    }
+
+    // ── Upload ─────────────────────────────────────────────────────────
+    let upload_start = Instant::now();
+    let in_handle = client.create_from_slice(bytemuck::cast_slice(&flat_input));
+    let out_handle = client.empty(n_float * size_of::<f32>());
+    let upload_ms = upload_start.elapsed().as_secs_f64() * 1000.0;
+
+    // ── Compute (kernel launch, async in CubeCL 0.10) ──────────────
+    let (cube_count, cube_dim) = compute_launch_grid(n);
+
+    let compute_start = Instant::now();
+    // SAFETY: The kernel launch is unsafe per the CubeCL API because the
+    // runtime cannot statically verify that the ArrayArg handles match the
+    // kernel's expected buffer lengths.  We guarantee:
+    //   - `in_handle` has `n_float` (= 3 × n) f32 elements
+    //   - `out_handle` has `n_float` f32 elements (allocated via `empty`)
+    //   - `n_pixels` (= n) is the per-thread bounds-check constant
+    //   - `cube_count` covers all n pixels (div_ceil ensures no underflow)
+    unsafe {
+        rgb_to_lab_kernel::launch(
+            &client,
+            cube_count,
+            cube_dim,
+            ArrayArg::from_raw_parts(in_handle.clone(), n_float),
+            ArrayArg::from_raw_parts(out_handle.clone(), n_float),
+            n,
+        );
+    }
+    let compute_ms = compute_start.elapsed().as_secs_f64() * 1000.0;
+
+    // ── Read-back ──────────────────────────────────────────────────────
+    let readback_start = Instant::now();
+    let bytes = match client.read_one(out_handle) {
+        Ok(b) => b,
+        Err(_) => return None,
+    };
+    let readback_ms = readback_start.elapsed().as_secs_f64() * 1000.0;
+
+    let result_f32: &[f32] = bytemuck::cast_slice(&bytes);
+    let mut result: Vec<[f32; 3]> = Vec::with_capacity(n);
+    for i in 0..n {
+        let base = i * 3;
+        result.push([result_f32[base], result_f32[base + 1], result_f32[base + 2]]);
+    }
+
+    Some((
+        result,
+        GpuBatchTimings {
+            upload_ms,
+            compute_ms,
+            readback_ms,
+        },
+    ))
 }

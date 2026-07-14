@@ -1,16 +1,28 @@
-//! SIMD benchmark binary — measures scalar vs SIMD batch throughput for
-//! rgb→xyz and records the result in benchmarks/results.jsonl.
+//! SIMD benchmark binary — measures batch throughput via wide::f64x4 SIMD
+//! for hot routes and records results in benchmarks/results.jsonl.
 //!
-//! Uses the same deterministic PRNG (mulberry32, seed=42) and input size
-//! (N=100000) as `benchmarks/js/bench.mjs` so comparisons are host-scoped.
+//! Uses the same deterministic PRNG (mulberry32, seed=42) as bench.mjs and
+//! bench.rs so comparisons are host-scoped.
+//!
+//! ## Usage
+//!
+//! ```bash
+//! cargo run --release --bin bench_simd [N] [warmup] [timed-iters]
+//! # env overrides: BENCH_INPUT_SIZE, BENCH_WARMUP, BENCH_ITERS
+//! ```
 
 use std::hint::black_box;
 use std::io::Write;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
+use color_convert_rs::hsl;
 use color_convert_rs::rgb;
 use color_convert_rs::simd;
 
+// ── Path to the append-only results ledger ─────────────────────────────
+const RESULTS_PATH: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/benchmarks/results.jsonl");
+
+// ── Mulberry32 PRNG ────────────────────────────────────────────────────
 fn mulberry32(state: &mut u32) -> f64 {
     *state = state.wrapping_add(0x6d2b79f5);
     let mut t = *state;
@@ -32,28 +44,9 @@ fn generate_rgb_pixels(n: usize) -> Vec<[u8; 3]> {
     pixels
 }
 
-fn main() {
-    let n: usize = std::env::var("BENCH_INPUT_SIZE")
-        .ok()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(100_000);
-    let warmup_iters: usize = std::env::var("BENCH_WARMUP")
-        .ok()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(3);
-    let timed_iters: usize = std::env::var("BENCH_ITERS")
-        .ok()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(20);
-
-    let host = std::process::Command::new("hostname")
-        .output()
-        .ok()
-        .and_then(|o| String::from_utf8(o.stdout).ok())
-        .map(|s| s.trim().to_string())
-        .unwrap_or_else(|| "unknown".to_string());
-
-    let commit = std::process::Command::new("git")
+// ── Helpers ────────────────────────────────────────────────────────────
+fn git_short_sha() -> String {
+    std::process::Command::new("git")
         .args(["rev-parse", "--short", "HEAD"])
         .output()
         .ok()
@@ -65,9 +58,20 @@ fn main() {
             }
         })
         .map(|s| s.trim().to_string())
-        .unwrap_or_else(|| "unknown".to_string());
+        .unwrap_or_else(|| "unknown".to_string())
+}
 
-    let ts = SystemTime::now()
+fn hostname() -> String {
+    std::process::Command::new("hostname")
+        .output()
+        .ok()
+        .and_then(|o| String::from_utf8(o.stdout).ok())
+        .map(|s| s.trim().to_string())
+        .unwrap_or_else(|| "unknown".to_string())
+}
+
+fn utc_now_iso() -> String {
+    SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|d| {
             let secs = d.as_secs();
@@ -84,92 +88,20 @@ fn main() {
                 y, mo, d, h, m, s, ms
             )
         })
-        .unwrap_or_else(|_| "1970-01-01T00:00:00.000Z".to_string());
+        .unwrap_or_else(|_| "1970-01-01T00:00:00.000Z".to_string())
+}
 
-    let pixels = generate_rgb_pixels(n);
-
-    // Scalar rgb→xyz
-    let mut best_ns: u128 = u128::MAX;
-    for _ in 0..warmup_iters {
-        for p in &pixels {
-            black_box(rgb::xyz(black_box(*p)));
+fn format_number(n: usize) -> String {
+    let s = n.to_string();
+    let len = s.len();
+    let mut result = String::with_capacity(len + (len.saturating_sub(1)) / 3);
+    for (i, ch) in s.chars().enumerate() {
+        if i > 0 && (len - i).is_multiple_of(3) {
+            result.push(',');
         }
+        result.push(ch);
     }
-    for _ in 0..timed_iters {
-        let start = Instant::now();
-        for p in &pixels {
-            black_box(rgb::xyz(black_box(*p)));
-        }
-        let elapsed = start.elapsed().as_nanos();
-        if elapsed < best_ns {
-            best_ns = elapsed;
-        }
-    }
-    let scalar_ms = best_ns as f64 / 1e6;
-    let scalar_throughput = (n as f64 / 1e6) / (scalar_ms / 1000.0);
-
-    // SIMD rgb→xyz
-    let mut best_ns_simd: u128 = u128::MAX;
-    for _ in 0..warmup_iters {
-        black_box(simd::rgb_to_xyz_batch(&pixels));
-    }
-    for _ in 0..timed_iters {
-        let start = Instant::now();
-        black_box(simd::rgb_to_xyz_batch(&pixels));
-        let elapsed = start.elapsed().as_nanos();
-        if elapsed < best_ns_simd {
-            best_ns_simd = elapsed;
-        }
-    }
-    let simd_ms = best_ns_simd as f64 / 1e6;
-    let simd_throughput = (n as f64 / 1e6) / (simd_ms / 1000.0);
-
-    let speedup = simd_throughput / scalar_throughput;
-
-    eprintln!("╔════════════════════════════════════════════════╗");
-    eprintln!("║  rgb→xyz  N={:<8}                             ║", n);
-    eprintln!("╠════════════════════════════════════════════════╣");
-    eprintln!(
-        "║  scalar:  {:>8.2} MP/s  ({:>8.3} ms)        ║",
-        scalar_throughput, scalar_ms
-    );
-    eprintln!(
-        "║  SIMD:    {:>8.2} MP/s  ({:>8.3} ms)        ║",
-        simd_throughput, simd_ms
-    );
-    eprintln!("║  speedup: {:>7.1}x                           ║", speedup);
-    eprintln!("╚════════════════════════════════════════════════╝");
-
-    // Build schema-conformant JSONL records by hand (no serde dep needed).
-    let sv = format!("{:.2}", scalar_throughput);
-    let sm = format!("{:.3}", scalar_ms);
-    let scalar_json = format!(
-        r#"{{"ts":"{ts}","commit":"{commit}","issue":20,"route":"rgb->xyz","tier":"cpu","input_size":{n},"metric":"throughput_mpx_s","value":{sv},"ms":{sm},"iters":{timed_iters},"warmup":{warmup_iters},"host":"{host}","gpu_present":false,"decision":"baseline","notes":"scalar rgb::xyz per-pixel baseline"}}"#
-    );
-
-    let pv = format!("{:.2}", simd_throughput);
-    let pm = format!("{:.3}", simd_ms);
-    let decision = if simd_throughput > scalar_throughput {
-        "kept"
-    } else {
-        "reverted"
-    };
-    let sp = format!("{:.1}", speedup);
-    let simd_json = format!(
-        r#"{{"ts":"{ts}","commit":"{commit}","issue":20,"route":"rgb->xyz","tier":"cpu","input_size":{n},"metric":"throughput_mpx_s","value":{pv},"ms":{pm},"iters":{timed_iters},"warmup":{warmup_iters},"host":"{host}","gpu_present":false,"baseline_ref":"scalar {commit}","decision":"{decision}","notes":"wide::f64x4 SIMD batch, {sp}x vs scalar"}}"#
-    );
-
-    let manifest_dir = env!("CARGO_MANIFEST_DIR");
-    let results_path = std::path::Path::new(manifest_dir).join("benchmarks/results.jsonl");
-    let mut file = std::fs::OpenOptions::new()
-        .append(true)
-        .create(true)
-        .open(&results_path)
-        .expect("failed to open results.jsonl");
-    writeln!(file, "{}", scalar_json).expect("failed to write scalar record");
-    writeln!(file, "{}", simd_json).expect("failed to write simd record");
-
-    eprintln!("\nAppended 2 records to {}", results_path.display());
+    result
 }
 
 fn civil_from_days(days: i64) -> Option<(i64, u32, u32)> {
@@ -187,4 +119,223 @@ fn civil_from_days(days: i64) -> Option<(i64, u32, u32)> {
     let m = if mp < 10 { mp + 3 } else { mp - 9 };
     let y = if m <= 2 { y + 1 } else { y };
     Some((y, m, d))
+}
+
+// ── Best-of-N timing for batch functions ───────────────────────────────
+fn bench_batch<F, T>(pixels: &[[u8; 3]], warmup: usize, iters: usize, f: F) -> f64
+where
+    F: Fn(&[[u8; 3]]) -> T,
+{
+    for _ in 0..warmup {
+        black_box(f(pixels));
+    }
+    let mut best_ns: u128 = u128::MAX;
+    for _ in 0..iters {
+        let start = Instant::now();
+        black_box(f(pixels));
+        let elapsed = start.elapsed().as_nanos();
+        if elapsed < best_ns {
+            best_ns = elapsed;
+        }
+    }
+    best_ns as f64 / 1e6
+}
+
+fn bench_per_pixel<F>(pixels: &[[u8; 3]], warmup: usize, iters: usize, mut f: F) -> f64
+where
+    F: FnMut(&[u8; 3]),
+{
+    for _ in 0..warmup {
+        for p in pixels {
+            f(black_box(p));
+            black_box(());
+        }
+    }
+    let mut best_ns: u128 = u128::MAX;
+    for _ in 0..iters {
+        let start = Instant::now();
+        for p in pixels {
+            f(black_box(p));
+            black_box(());
+        }
+        let elapsed = start.elapsed().as_nanos();
+        if elapsed < best_ns {
+            best_ns = elapsed;
+        }
+    }
+    best_ns as f64 / 1e6
+}
+
+// ── JSONL record builder ────────────────────────────────────────────────
+struct BenchCtx {
+    commit: String,
+    host: String,
+    gpu_present: bool,
+}
+
+fn append_record(
+    route: &str,
+    best_ms: f64,
+    n: usize,
+    iters: usize,
+    warmup: usize,
+    ctx: &BenchCtx,
+    notes: &str,
+) {
+    let throughput_mps = (n as f64 / 1_000_000.0) / (best_ms / 1000.0);
+    let escaped_route = route.replace('\\', "\\\\").replace('"', "\\\"");
+    let ts = utc_now_iso();
+    let escaped_notes = notes.replace('\\', "\\\\").replace('"', "\\\"");
+
+    let record = format!(
+        concat!(
+            r#"{{"ts":"{ts}","commit":"{commit}","issue":23,"#,
+            r#""route":"{route}","tier":"cpu","input_size":{n},"#,
+            r#""metric":"throughput_mpx_s","value":{mps:.2},"ms":{ms:.3},"#,
+            r#""iters":{iters},"warmup":{warmup},"host":"{host}","#,
+            r#""gpu_present":{gp},"decision":"baseline","#,
+            r#""notes":"{notes}"}}"#,
+        ),
+        ts = ts,
+        commit = ctx.commit,
+        route = escaped_route,
+        n = n,
+        mps = throughput_mps,
+        ms = best_ms,
+        iters = iters,
+        warmup = warmup,
+        host = ctx.host,
+        gp = ctx.gpu_present,
+        notes = escaped_notes,
+    );
+
+    let mut file = std::fs::OpenOptions::new()
+        .append(true)
+        .create(true)
+        .open(RESULTS_PATH)
+        .expect("must be able to open results.jsonl for append");
+    writeln!(file, "{record}").expect("must be able to write record");
+}
+
+// ── Route definitions ──────────────────────────────────────────────────
+fn rgb_to_xyz_simd(pixels: &[[u8; 3]]) -> Vec<[f64; 3]> {
+    simd::rgb_to_xyz_batch(pixels)
+}
+
+fn rgb_to_lab_simd(pixels: &[[u8; 3]]) -> Vec<[f64; 3]> {
+    let xyz_batch = simd::rgb_to_xyz_batch(pixels);
+    simd::xyz_to_lab_batch(&xyz_batch)
+}
+
+fn rgb_to_hsl_scalar(pixel: &[u8; 3]) {
+    let _ = rgb::hsl(*pixel);
+}
+
+fn rgb_hsl_rgb_scalar(pixel: &[u8; 3]) {
+    let h = rgb::hsl(*pixel);
+    let _ = hsl::rgb(h);
+}
+
+// ── Main ────────────────────────────────────────────────────────────────
+fn main() {
+    let args: Vec<String> = std::env::args().collect();
+
+    // N: positional arg 1, else env, else default 100k
+    let n: usize = std::env::var("BENCH_INPUT_SIZE")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .or_else(|| args.get(1).and_then(|s| s.parse().ok()))
+        .unwrap_or(100_000);
+
+    let warmup_iters: usize = std::env::var("BENCH_WARMUP")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .or_else(|| args.get(2).and_then(|s| s.parse().ok()))
+        .unwrap_or(3);
+
+    let timed_iters: usize = std::env::var("BENCH_ITERS")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .or_else(|| args.get(3).and_then(|s| s.parse().ok()))
+        .unwrap_or(20);
+
+    if n == 0 || warmup_iters == 0 || timed_iters == 0 {
+        eprintln!("ERROR: N, warmup, and timed-iters must be > 0");
+        std::process::exit(1);
+    }
+
+    let pixels = generate_rgb_pixels(n);
+    let host = hostname();
+    let commit = git_short_sha();
+    let gpu_present = color_convert_rs::gpu_present();
+    let ctx = BenchCtx {
+        commit: commit.clone(),
+        host: host.clone(),
+        gpu_present,
+    };
+
+    println!(
+        "Generated {} deterministic pixels (seed=42)",
+        format_number(pixels.len())
+    );
+    println!("Warmup: {warmup_iters}   Timed iters: {timed_iters}\n");
+
+    // ── SIMD routes ────────────────────────────────────────────────────
+
+    // rgb→xyz (SIMD batch)
+    let xyz_ms = bench_batch(&pixels, warmup_iters, timed_iters, rgb_to_xyz_simd);
+    let xyz_mps = (n as f64 / 1e6) / (xyz_ms / 1000.0);
+    append_record(
+        "rgb->xyz",
+        xyz_ms,
+        n,
+        timed_iters,
+        warmup_iters,
+        &ctx,
+        &format!("wide::f64x4 SIMD batch, N={}", format_number(n)),
+    );
+    println!(
+        "{:<18}  N={:>8}  best={:>9.3} ms  {:>10.1} MP/s  [SIMD]",
+        "rgb->xyz", n, xyz_ms, xyz_mps
+    );
+
+    // rgb→lab (SIMD: xyz batch → lab batch)
+    let lab_ms = bench_batch(&pixels, warmup_iters, timed_iters, rgb_to_lab_simd);
+    let lab_mps = (n as f64 / 1e6) / (lab_ms / 1000.0);
+    append_record(
+        "rgb->lab",
+        lab_ms,
+        n,
+        timed_iters,
+        warmup_iters,
+        &ctx,
+        &format!(
+            "wide::f64x4 SIMD batch (xyz→lab chain), N={}",
+            format_number(n)
+        ),
+    );
+    println!(
+        "{:<18}  N={:>8}  best={:>9.3} ms  {:>10.1} MP/s  [SIMD]",
+        "rgb->lab", n, lab_ms, lab_mps
+    );
+
+    // ── Scalar routes (for reference) ──────────────────────────────────
+
+    // rgb→hsl (scalar per-pixel)
+    let hsl_ms = bench_per_pixel(&pixels, warmup_iters, timed_iters, rgb_to_hsl_scalar);
+    let hsl_mps = (n as f64 / 1e6) / (hsl_ms / 1000.0);
+    println!(
+        "{:<18}  N={:>8}  best={:>9.3} ms  {:>10.1} MP/s  [scalar]",
+        "rgb->hsl", n, hsl_ms, hsl_mps
+    );
+
+    // rgb→hsl→rgb (scalar per-pixel)
+    let hslrgb_ms = bench_per_pixel(&pixels, warmup_iters, timed_iters, rgb_hsl_rgb_scalar);
+    let hslrgb_mps = (n as f64 / 1e6) / (hslrgb_ms / 1000.0);
+    println!(
+        "{:<18}  N={:>8}  best={:>9.3} ms  {:>10.1} MP/s  [scalar]",
+        "rgb->hsl->rgb", n, hslrgb_ms, hslrgb_mps
+    );
+
+    println!("\nAppended 2 SIMD records to {}", RESULTS_PATH);
 }
