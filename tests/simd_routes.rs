@@ -19,11 +19,20 @@
 use color_convert_rs::rgb;
 use color_convert_rs::simd;
 use color_convert_rs::simd_oklab;
+use color_convert_rs::simd_xyz;
 use color_convert_rs::xyz;
 
 const XYZ_TOLERANCE: f64 = 5e-4;
 const LAB_TOLERANCE: f64 = 1e-3;
 const OKLAB_TOLERANCE: f64 = 1e-3;
+/// Tolerance for f32-SIMD `xyz→rgb` vs scalar f64 `xyz::rgb`.
+///
+/// Output range is [0, 255] per channel. The forward sRGB gamma uses
+/// `powf(1.0/2.4)` — gentler than the inverse `powf(2.4)` in rgb→xyz —
+/// but the 3×3 matrix + gamma + ×255 chain accumulates f32 vs f64
+/// rounding.  0.1 absolute (≈4e-4 relative at 255) catches real bugs
+/// while accepting the f32→f64 gap.
+const XYZ_RGB_TOLERANCE: f64 = 0.1;
 
 // ── Deterministic PRNG (mulberry32, seed=42) ─────────────────────────
 fn mulberry32(state: &mut u32) -> f64 {
@@ -243,6 +252,87 @@ fn rgb_to_oklab_batch_matches_scalar() {
                 scalar_val[chan],
                 diff,
                 OKLAB_TOLERANCE,
+            );
+        }
+    }
+}
+
+/// Behavior 5: `xyz_to_rgb_batch` (f32x8 SIMD) must match the scalar
+/// `xyz::rgb` (f64) within XYZZRGB_TOLERANCE (0.1) for batches including
+/// non-multiples of the SIMD lane width (8). XYZ inputs are generated from
+/// the deterministic RGB batch via `rgb::xyz` (f64), then fed to both the
+/// scalar `xyz::rgb` and the SIMD batch.
+///
+/// Edge cases: pure black XYZ [0,0,0] → rgb [0,0,0], and D65 white XYZ
+/// [95.047, 100.0, 108.883] → rgb [255,255,255] (within tolerance).
+#[test]
+fn xyz_to_rgb_batch_matches_scalar() {
+    for n in [1, 7, 8, 15, 16, 100, 257] {
+        let rgb_pixels = generate_rgb_pixels(n);
+        // Generate XYZ inputs via the scalar f64 path
+        let xyz_inputs: Vec<[f32; 3]> = rgb_pixels
+            .iter()
+            .map(|&p| rgb::xyz(p))
+            .map(|[x, y, z]| [x as f32, y as f32, z as f32])
+            .collect();
+
+        let scalar: Vec<[f64; 3]> = xyz_inputs
+            .iter()
+            .map(|&p| [p[0] as f64, p[1] as f64, p[2] as f64])
+            .map(xyz::rgb)
+            .collect();
+        let simd_result = simd_xyz::xyz_to_rgb_batch(&xyz_inputs);
+
+        assert_eq!(
+            simd_result.len(),
+            scalar.len(),
+            "batch size mismatch for n={n}"
+        );
+
+        for (i, (simd_val, scalar_val)) in simd_result.iter().zip(scalar.iter()).enumerate() {
+            let _f32_check: [f32; 3] = *simd_val;
+
+            for chan in 0..3 {
+                let diff = (simd_val[chan] as f64 - scalar_val[chan]).abs();
+                assert!(
+                    diff <= XYZ_RGB_TOLERANCE,
+                    "pixel {i} channel {chan}: simd(f32)={} scalar(f64)={} diff={:.2e} > tol={:.2e}",
+                    simd_val[chan],
+                    scalar_val[chan],
+                    diff,
+                    XYZ_RGB_TOLERANCE,
+                );
+            }
+        }
+    }
+
+    // Edge cases: black XYZ and D65 white XYZ
+    let edge_xyz: [[f32; 3]; 2] = [
+        [0.0, 0.0, 0.0],                              // pure black
+        [95.047, 100.0, 108.883],                     // D65 white
+    ];
+
+    let scalar: Vec<[f64; 3]> = edge_xyz
+        .iter()
+        .map(|&p| [p[0] as f64, p[1] as f64, p[2] as f64])
+        .map(xyz::rgb)
+        .collect();
+    let simd_result = simd_xyz::xyz_to_rgb_batch(&edge_xyz);
+
+    assert_eq!(simd_result.len(), scalar.len(), "edge-case batch size mismatch");
+
+    for (i, (simd_val, scalar_val)) in simd_result.iter().zip(scalar.iter()).enumerate() {
+        let _f32_check: [f32; 3] = *simd_val;
+        for chan in 0..3 {
+            let diff = (simd_val[chan] as f64 - scalar_val[chan]).abs();
+            assert!(
+                diff <= XYZ_RGB_TOLERANCE,
+                "edge xyz {:?} channel {chan}: simd(f32)={} scalar(f64)={} diff={:.2e} > tol={:.2e}",
+                edge_xyz[i],
+                simd_val[chan],
+                scalar_val[chan],
+                diff,
+                XYZ_RGB_TOLERANCE,
             );
         }
     }
