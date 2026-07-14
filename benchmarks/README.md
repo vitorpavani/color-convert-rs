@@ -117,6 +117,36 @@ rg '"route":"rgb->hsl"' benchmarks/results.jsonl | rg '"tier":"cpu"'
 > f64x4 baseline measured at commit `1a4e607`; f32x8 at commit `5d4b85c`.
 > `grep '"issue":51' results.jsonl` confirms 4 baseline + 4 kept records.
 
+**Self-improvement waves — issues #58, #61, #65, #64 (kept) + #25, #24 (dropped)**
+
+Driven by the `improvement-dev` agent through the full RED→GREEN→BLUE TDD cycle, each
+measured at N=50M on host `vipavani` (NVIDIA RTX 2000 Ada laptop, NixOS) and kept **only
+if it beat BOTH the JS baseline AND the previous Rust iteration**. Dropped improvements are
+still recorded (negative results are article material).
+
+| Issue | Improvement | Route | Before → After | Δ | Decision |
+|-------|-------------|-------|----------------|---|----------|
+| #58 | SIMD `rgb→hsl` (f32x8 mask-blend hue) | rgb→hsl | 37.1 → **142.1** MP/s | **3.8×** | ✅ kept |
+| #61 | Fused `rgb→xyz→lab` single pass (drop intermediate xyz Vec) | rgb→lab | 21.7 → **24.1** MP/s | **+10.9%** | ✅ kept |
+| #65 | Vectorize srgb/LAB piecewise transfer across f32x8 (SIMD `powf`/`cbrt` + mask-blend) | rgb→lab | 24.4 → **31.9** MP/s | **+30.7%** | ✅ kept |
+| #65 | (same change) | rgb→xyz | 38.2 → **46.3** MP/s | **+21.2%** | ✅ kept |
+| #64 | SIMD `hsl→rgb` + `rgb→hsl→rgb` round-trip | rgb→hsl→rgb | 21.0 → **65.0** MP/s (JS 7.1) | **3.1× / 9.2× vs JS** | ✅ kept |
+| #25 | SoA vs AoS memory layout | rgb→lab | 22.1 → 20.2 MP/s | −8.6% | ❌ dropped |
+| #24 | GPU workgroup `BLOCK_SIZE` sweep {32,64,128,256} | rgb→lab (gpu) | 33.6 → 32.7–34.0 MP/s | ±3% noise | ❌ dropped |
+
+> **#25 SoA dropped:** the AoS→SoA transpose (de-interleave + 2 extra allocations) costs
+> more than the contiguous-load benefit at stride-3 — the x86 prefetcher already handles the
+> AoS gather well. `grep '"issue":25' results.jsonl` shows `decision:"reverted"`.
+>
+> **#24 GPU sweep dropped:** every `BLOCK_SIZE` lands within a ±3% run-to-run noise band; the
+> kernel is **transfer-bound, not compute-bound** (see the #23→#24 gate analysis below —
+> compute is flat at 0.01ms). `BLOCK_SIZE=64` stays. `grep '"issue":24' results.jsonl` shows
+> the sweep + `decision:"reverted"`.
+>
+> **rgb→lab CPU-SIMD journey:** 10.8 (f64x4, #23) → 22.1 (f32x8, #51) → 24.1 (fused, #61) →
+> **31.9** (vectorized transfer, #65) MP/s at N=50M — a **2.95×** cumulative gain over the
+> f64x4 baseline, all measured and each kept only on a proven win.
+
 ### Key observations
 
 - **CPU SIMD throughput is flat** at ~10.8 MP/s (f64x4) across all N — predictable.
@@ -156,48 +186,42 @@ the PCIe bus, not the shader. Higher-leverage work: pinned/zero-copy memory stag
 asynchronous upload/compute overlap (double buffering), or fused multi-pass kernels to
 reduce total data in flight.
 
-### rgb→hsl throughput (MP/s)
+### rgb→hsl throughput (MP/s) — now CPU SIMD (#58)
 
-**Issue #23 JS sweep (ledger: issue=23, tier=js)**
+| Tier | @N=50M | vs JS |
+|------|--------|-------|
+| JS (issue=23) | 14.1 MP/s | 1.0× |
+| Rust scalar batch (issue=58 baseline) | 37.1 MP/s | 2.6× |
+| **Rust f32x8 SIMD (issue=58, decision=kept)** | **142.1 MP/s** | **10.1×** |
 
-| N | JS (issue=23, tier=js) |
-|---|---------------------------|
-| 100k | 18.7 MP/s |
-| 1M | 18.4 MP/s |
-| 10M | 18.5 MP/s |
-| 50M | 14.1 MP/s |
-| 100M | OOM (ledger: decision=oom) |
+> Issue #58 added the first SIMD path for rgb→hsl via f32x8 mask-blend of the 3-way hue
+> branch — **3.8× over the scalar batch**, **10.1× over JS**. `grep '"issue":58' results.jsonl`.
 
-> No GPU or SIMD path for rgb→hsl yet. JS GC-driven degradation visible at N=50M (14.1 MP/s).
-> CPU scalar measurements omitted — compiler elimination suspected (see AGENTS.md).
+### rgb→hsl→rgb throughput (MP/s) — now CPU SIMD (#64)
 
-### rgb→hsl→rgb throughput (MP/s)
+| Tier | @N=50M | vs JS |
+|------|--------|-------|
+| JS (issue=23) | 7.1 MP/s | 1.0× |
+| Rust scalar batch (issue=64 baseline) | 21.0 MP/s | 3.0× |
+| **Rust f32x8 SIMD round-trip (issue=64, decision=kept)** | **65.0 MP/s** | **9.2×** |
 
-**Issue #23 JS sweep (ledger: issue=23, tier=js)**
-
-| N | JS (issue=23, tier=js) |
-|---|---------------------------|
-| 100k | 10.9 MP/s |
-| 1M | 10.9 MP/s |
-| 10M | 10.6 MP/s |
-| 50M | 7.1 MP/s |
-| 100M | OOM (ledger: decision=oom) |
-
-> No GPU or SIMD path for rgb→hsl→rgb yet. JS shows GC-driven degradation at N=50M
-> (7.1 MP/s vs 10.9 MP/s at 1M). CPU scalar measurements omitted — compiler
-> elimination suspected (see AGENTS.md).
+> Issue #64 added SIMD `hsl→rgb` (f32x8 mask-blend of the 4-way channel piecewise), completing
+> the round-trip SIMD path — **3.1× over the scalar batch**, **9.2× over JS**. Round-trip
+> correctness verified: rgb→hsl→rgb returns the original within rounding tolerance.
 
 ### rgb→xyz throughput (MP/s) — CPU SIMD
 
-**Issue #23 f64x4 sweep + Issue #51 f32x8**
+**Issue #23 f64x4 sweep + Issue #51 f32x8 + Issue #65 vectorized transfer**
 
-| N | f64x4 (issue=23, tier=cpu) | f32x8 (issue=51, tier=cpu, decision=kept) | speedup |
-|---|---------|---------|---------|
-| 100k | 24.7 MP/s | — | — |
-| 1M | 24.5 MP/s | — | — |
-| 10M | 19.6 MP/s | — | — |
-| 50M | 20.4 MP/s | **37.5 MP/s** | **1.84×** |
-| 100M | 20.3 MP/s | **37.6 MP/s** | **1.85×** |
+| N | f64x4 (issue=23, tier=cpu) | f32x8 (issue=51, decision=kept) | f32x8 + vec transfer (issue=65, decision=kept) | speedup vs f64x4 |
+|---|---------|---------|---------|---------|
+| 100k | 24.7 MP/s | — | — | — |
+| 1M | 24.5 MP/s | — | — | — |
+| 10M | 19.6 MP/s | — | — | — |
+| 50M | 20.4 MP/s | 37.5 MP/s | **46.3 MP/s** | **2.27×** |
+| 100M | 20.3 MP/s | 37.6 MP/s | — | — |
 
 > JS `color-convert.rgb.xyz`: 11.2 MP/s at N=100k, 10.8 MP/s at N=10M (ledger: issue=23, tier=js).
-> f32x8 SIMD is ~3.5× faster than JS and ~1.85× faster than f64x4 SIMD.
+> Issue #65 vectorized the srgb inverse-gamma transfer across f32x8 (SIMD `powf` + mask-blend,
+> replacing scalar lane-by-lane calls) for a further **+21.2%** (37.5 → 46.3 MP/s) — now
+> ~4.3× faster than JS and **2.27× faster than f64x4 SIMD**.
