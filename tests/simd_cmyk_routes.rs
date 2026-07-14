@@ -90,9 +90,9 @@ fn rgb_to_cmyk_batch_edge_cases() {
         // Pure white → all 0
         [255, 255, 255],
         // Primary colors
-        [255, 0, 0],   // red    → c=0, m=100, y=100, k=0
-        [0, 255, 0],   // green  → c=100, m=0, y=100, k=0
-        [0, 0, 255],   // blue   → c=100, m=100, y=0, k=0
+        [255, 0, 0], // red    → c=0, m=100, y=100, k=0
+        [0, 255, 0], // green  → c=100, m=0, y=100, k=0
+        [0, 0, 255], // blue   → c=100, m=100, y=0, k=0
         // Secondary colors
         [255, 255, 0], // yellow → c=0, m=0, y=100, k=0
         [0, 255, 255], // cyan   → c=100, m=0, y=0, k=0
