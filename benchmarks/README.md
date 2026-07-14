@@ -284,7 +284,36 @@ reduce total data in flight.
 > (7.8 MP/s). Keep decision confirmed against **BOTH** the JS baseline AND the previous Rust
 > iteration. `grep '"issue":79' results.jsonl`.
 
-### Cumulative self-improvement summary (waves 1–4)
+### rgb→hcg throughput (MP/s) — now CPU SIMD (#87)
+
+| Tier | throughput |
+|------|--------|
+| JS (issue=87, N=10M) | 14.4 MP/s |
+| Rust scalar batch (issue=87 baseline, N=50M) | 38.5 MP/s |
+| **Rust f32x8 SIMD (issue=87, decision=kept, N=50M)** | **126.5 MP/s** |
+
+> Issue #87 added the first SIMD path for rgb→hcg via f32x8 mask-blend of the 3-way hue branch
+> plus a chroma-guarded grayscale (`min/(1-chroma)` masked to 0 when chroma==1) — **3.29× over
+> the scalar batch** and **8.8× over the JS baseline** (14.4 MP/s). Uses `f32x8::trunc`/`fract`
+> for the `% 6.0` and `% 1.0` hue wraps. Keep decision confirmed against **BOTH** baselines.
+> `grep '"issue":87' results.jsonl`.
+
+### rgb→apple throughput (MP/s) — now CPU SIMD (#86)
+
+| Tier | throughput |
+|------|--------|
+| JS (issue=86, N=10M) | 89.0 MP/s |
+| Rust scalar batch (issue=86 baseline, N=50M) | 99.9 MP/s |
+| **Rust f32x8 SIMD (issue=86, decision=kept, N=50M)** | **168.5 MP/s** |
+
+> Issue #86 was an honest keep/drop test: rgb→apple is a trivial `(c/255)×65535` (= `×257`)
+> per-channel linear scale — no branches, no transcendentals — so the scalar path is nearly
+> memory-bound and SIMD was expected to possibly lose. It **won anyway: 1.69× over the scalar
+> batch, 1.89× over JS** — not from faster arithmetic but from eliminating per-pixel function-call
+> and iterator overhead and processing 8 pixels per tile. Tolerance 1e-6 (all outputs are exact
+> integer multiples of 257 ≤ 65535, exactly representable in f32). `grep '"issue":86' results.jsonl`.
+
+### Cumulative self-improvement summary (waves 1–5)
 
 | Wave | Issue | Route | Δ | Decision |
 |------|-------|-------|---|----------|
@@ -298,8 +327,18 @@ reduce total data in flight.
 | 3 | #72 | rgb→cmyk | 2.04× | ✅ kept |
 | 4 | #78 | rgb→hwb | 3.33× | ✅ kept |
 | 4 | #79 | rgb→oklab | 3.51× | ✅ kept |
+| 5 | #87 | rgb→hcg | 3.29× | ✅ kept |
+| 5 | #86 | rgb→apple | 1.69× | ✅ kept |
 
-**8 kept, 2 dropped** across 4 waves — every kept change beat **both** the JS baseline AND the
-previous Rust iteration (the JS baselines for rgb→cmyk, rgb→hwb and rgb→oklab were backfilled by
-wiring those routes into `benchmarks/js/bench.mjs`); every dropped change is recorded as a negative
-result. See [`docs/ARCHITECTURE_REVIEW.md`](../docs/ARCHITECTURE_REVIEW.md) for the full review.
+**10 kept, 2 dropped** across 5 waves — every kept change beat **both** the JS baseline AND the
+previous Rust iteration (JS baselines for rgb→cmyk, rgb→hwb and rgb→oklab were backfilled by wiring
+those routes into `benchmarks/js/bench.mjs`); every dropped change is recorded as a negative result.
+
+> **Self-improvement drive concluding after wave 5.** Every numeric RGB-source route with a
+> non-trivial per-pixel body now has a vectorized f32x8 path (hsl, hsv, hwb, cmyk, hcg, lab, xyz,
+> oklab, the hsl↔rgb round-trip, and even the trivial apple scale). The remaining unported routes
+> are lookups/quantizers (hex, keyword, ansi16/256, gray) where SIMD offers little, or the
+> transfer-bound GPU path (see the #24 analysis) whose bottleneck is PCIe, not compute. Further
+> waves would increasingly produce *drops* rather than *keeps* — the honest signal that the
+> CPU-SIMD improvement surface is effectively exhausted. See
+> [`docs/ARCHITECTURE_REVIEW.md`](../docs/ARCHITECTURE_REVIEW.md) for the full review.
