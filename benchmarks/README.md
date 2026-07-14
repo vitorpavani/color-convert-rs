@@ -242,43 +242,47 @@ reduce total data in flight.
 
 ### rgb→cmyk throughput (MP/s) — now CPU SIMD (#72)
 
-| Tier | @N=50M |
+| Tier | throughput |
 |------|--------|
-| Rust scalar batch (issue=72 baseline) | 63.8 MP/s |
-| **Rust f32x8 SIMD (issue=72, decision=kept)** | **130.1 MP/s** |
+| JS (issue=72, N=10M) | 19.5 MP/s |
+| Rust scalar batch (issue=72 baseline, N=50M) | 63.8 MP/s |
+| **Rust f32x8 SIMD (issue=72, decision=kept, N=50M)** | **130.1 MP/s** |
 
 > Issue #72 added the first SIMD path for rgb→cmyk via f32x8, with a mask-blend guard for the
 > pure-black `k==1` divide-by-zero case (mirroring the JS `|| 0` fallback) — **2.04× over the
-> scalar batch**. No JS baseline is wired for rgb→cmyk yet; the keep decision is against the
-> previous Rust scalar iteration. `grep '"issue":72' results.jsonl`.
+> scalar batch** and **6.7× over the JS baseline** (19.5 MP/s). Keep decision confirmed against
+> **BOTH** the JS baseline AND the previous Rust iteration. `grep '"issue":72' results.jsonl`.
 
 ### rgb→hwb throughput (MP/s) — now CPU SIMD (#78)
 
-| Tier | @N=50M |
+| Tier | throughput |
 |------|--------|
-| Rust scalar batch (issue=78 baseline) | 44.0 MP/s |
-| **Rust f32x8 SIMD (issue=78, decision=kept)** | **146.4 MP/s** |
+| JS (issue=78, N=10M) | 17.3 MP/s |
+| Rust scalar batch (issue=78 baseline, N=50M) | 44.0 MP/s |
+| **Rust f32x8 SIMD (issue=78, decision=kept, N=50M)** | **146.4 MP/s** |
 
 > Issue #78 added the first SIMD path for rgb→hwb via f32x8 mask-blend of the 3-way hue
 > branch (reusing the same hue as rgb→hsl since `hwb_f64` calls `hsl_f64(rgb)[0]`).
 > Whiteness = min×100, blackness = (1-max)×100 as straight-line f32x8 ops — **3.33× over
-> the scalar batch**. No JS baseline is wired for rgb→hwb yet; the keep decision is against
-> the previous Rust scalar iteration. `grep '"issue":78' results.jsonl`.
+> the scalar batch** and **8.5× over the JS baseline** (17.3 MP/s). Keep decision confirmed
+> against **BOTH** the JS baseline AND the previous Rust iteration. `grep '"issue":78' results.jsonl`.
 
 ### rgb→oklab throughput (MP/s) — now CPU SIMD (#79)
 
-| Tier | @N=50M |
+| Tier | throughput |
 |------|--------|
-| Rust scalar batch (issue=79 baseline) | 9.1 MP/s |
-| **Rust f32x8 SIMD (issue=79, decision=kept)** | **31.9 MP/s** |
+| JS (issue=79, N=10M) | 7.8 MP/s |
+| Rust scalar batch (issue=79 baseline, N=50M) | 9.1 MP/s |
+| **Rust f32x8 SIMD (issue=79, decision=kept, N=50M)** | **31.9 MP/s** |
 
 > Issue #79 added the first SIMD path for rgb→oklab — the most transcendental-heavy route
 > (per pixel: 3× srgb inverse-gamma `powf(2.4)` + LMS matrix + 3× `cbrt` + Oklab matrix).
 > Vectorized across f32x8, reusing `simd::srgb_inv_f32x8` (from #65) and `wide::f32x8::cbrt` —
 > **3.51× over the scalar batch**, the **largest single-route speedup** in the project. The
 > cbrt-heavy route benefits *more* from SIMD than the simpler matrix routes because the scalar
-> transcendentals are so expensive. Accuracy bound: tol=1e-3. No JS baseline wired; the keep
-> decision is against the previous Rust scalar iteration. `grep '"issue":79' results.jsonl`.
+> transcendentals are so expensive. Accuracy bound: tol=1e-3. Also **4.1× over the JS baseline**
+> (7.8 MP/s). Keep decision confirmed against **BOTH** the JS baseline AND the previous Rust
+> iteration. `grep '"issue":79' results.jsonl`.
 
 ### Cumulative self-improvement summary (waves 1–4)
 
@@ -295,6 +299,7 @@ reduce total data in flight.
 | 4 | #78 | rgb→hwb | 3.33× | ✅ kept |
 | 4 | #79 | rgb→oklab | 3.51× | ✅ kept |
 
-**8 kept, 2 dropped** across 4 waves — every kept change beat both the JS baseline (where wired)
-and the previous Rust iteration; every dropped change is recorded as a negative result. See
-[`docs/ARCHITECTURE_REVIEW.md`](../docs/ARCHITECTURE_REVIEW.md) for the full review.
+**8 kept, 2 dropped** across 4 waves — every kept change beat **both** the JS baseline AND the
+previous Rust iteration (the JS baselines for rgb→cmyk, rgb→hwb and rgb→oklab were backfilled by
+wiring those routes into `benchmarks/js/bench.mjs`); every dropped change is recorded as a negative
+result. See [`docs/ARCHITECTURE_REVIEW.md`](../docs/ARCHITECTURE_REVIEW.md) for the full review.
