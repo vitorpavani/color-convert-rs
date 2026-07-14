@@ -188,9 +188,14 @@ fn compute_launch_grid(n_pixels: usize) -> (CubeCount, CubeDim) {
         (CubeCount::new_1d(total_blocks), CubeDim::new_1d(BLOCK_SIZE))
     } else {
         // 2-D split: both dims ≤ 65535, product ≥ total_blocks
-        let grid_y = total_blocks.div_ceil(MAX_DISPATCH_DIM).min(MAX_DISPATCH_DIM);
+        let grid_y = total_blocks
+            .div_ceil(MAX_DISPATCH_DIM)
+            .min(MAX_DISPATCH_DIM);
         let grid_x = total_blocks.div_ceil(grid_y).min(MAX_DISPATCH_DIM);
-        (CubeCount::new_2d(grid_x, grid_y), CubeDim::new_2d(BLOCK_SIZE, 1))
+        (
+            CubeCount::new_2d(grid_x, grid_y),
+            CubeDim::new_2d(BLOCK_SIZE, 1),
+        )
     }
 }
 
