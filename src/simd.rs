@@ -1,10 +1,11 @@
 //! CPU-SIMD batch conversion routes for hot matrix-heavy paths.
 //!
 //! Uses the [`wide`] crate for portable explicit SIMD (f32x8 lanes) to
-//! process 8 pixels at once. The matrix multiply and linear combination
-//! parts are SIMD-accelerated; piecewise nonlinear transforms (sRGB gamma,
-//! LAB cube-root transfer) extract individual lanes, call the scalar
-//! reference functions, and re-pack.
+//! process 8 pixels at once. Both the matrix multiply/linear-combination
+//! AND the piecewise nonlinear transfer functions (sRGB gamma via `powf`,
+//! LAB cube-root via `cbrt`) are SIMD-accelerated through mask-blend
+//! lane selection — no scalar-lane de-vectorization anywhere in the hot
+//! path.
 //!
 //! ## Routes covered
 //!
@@ -34,33 +35,41 @@
 //! processing 8 pixels at a time via `wide::f32x8` with scalar remainder
 //! fallback for the final 0–7 pixels.
 
-/// sRGB inverse nonlinear transform — f32 version.
+/// sRGB inverse nonlinear transform — vectorized across 8 f32 lanes via mask-blend.
+///
+/// The scalar piecewise `if c > 0.04045` is replaced with a SIMD mask-blend:
+/// both branches are computed for all 8 lanes, then the correct one is selected
+/// via `mask.blend(pow_branch, linear_branch)`.  Uses `f32x8::powf(2.4)` which
+/// delegates to the `wide` crate's LLVM-generated vector intrinsic.
 #[inline]
-fn srgb_inv_f32(c: f32) -> f32 {
-    if c > 0.04045 {
-        ((c + 0.055) / 1.055).powf(2.4)
-    } else {
-        c / 12.92
-    }
+fn srgb_inv_f32x8(c: wide::f32x8) -> wide::f32x8 {
+    let pow_branch = ((c + wide::f32x8::splat(0.055)) / wide::f32x8::splat(1.055)).powf(2.4);
+    let linear_branch = c / wide::f32x8::splat(12.92);
+    let mask = c.simd_gt(wide::f32x8::splat(0.04045));
+    mask.blend(pow_branch, linear_branch)
 }
 
-/// CIE LAB transfer function — f32 version.
+/// CIE LAB transfer function — vectorized across 8 f32 lanes via mask-blend.
+///
+/// The scalar piecewise `if t > ft` is replaced with a SIMD mask-blend: both
+/// branches are computed for all 8 lanes, then the correct one is selected via
+/// `mask.blend(cbrt_branch, linear_branch)`.  Uses `f32x8::cbrt()` which
+/// delegates to the `wide` crate's vector cubic-root intrinsic.
 #[inline]
-fn lab_transfer_f32(t: f32) -> f32 {
+fn lab_transfer_f32x8(t: wide::f32x8) -> wide::f32x8 {
     let ft = (6.0_f32 / 29.0).powi(3);
-    if t > ft {
-        t.cbrt()
-    } else {
-        7.787 * t + 16.0 / 116.0
-    }
+    let cbrt_branch = t.cbrt();
+    let linear_branch = wide::f32x8::splat(7.787) * t + wide::f32x8::splat(16.0 / 116.0);
+    let mask = t.simd_gt(wide::f32x8::splat(ft));
+    mask.blend(cbrt_branch, linear_branch)
 }
 
 /// Process a batch of RGB pixels into XYZ via sRGB inverse gamma + matrix.
 ///
-/// Processes 8 pixels at a time using `f32x8` SIMD lanes for the matrix
-/// multiply; extracts lanes for the scalar piecewise gamma function and
-/// re-packs. Remainder pixels (final 0–7) fall back to the scalar
-/// [`crate::rgb::xyz`], converting its f64 output to f32.
+/// Processes 8 pixels at a time using `f32x8` SIMD lanes for both the
+/// sRGB inverse nonlinear transform (vectorized via mask-blend) and the
+/// sRGB→XYZ matrix multiply. Remainder pixels (final 0–7) fall back to
+/// the scalar [`crate::rgb::xyz`], converting its f64 output to f32.
 pub fn rgb_to_xyz_batch(rgb: &[[u8; 3]]) -> Vec<[f32; 3]> {
     use wide::f32x8;
 
@@ -104,39 +113,9 @@ pub fn rgb_to_xyz_batch(rgb: &[[u8; 3]]) -> Vec<[f32; 3]> {
         let g_norm = g / f32x8::splat(255.0);
         let b_norm = b / f32x8::splat(255.0);
 
-        let r_arr = r_norm.to_array();
-        let g_arr = g_norm.to_array();
-        let b_arr = b_norm.to_array();
-        let r_lin = f32x8::new([
-            srgb_inv_f32(r_arr[0]),
-            srgb_inv_f32(r_arr[1]),
-            srgb_inv_f32(r_arr[2]),
-            srgb_inv_f32(r_arr[3]),
-            srgb_inv_f32(r_arr[4]),
-            srgb_inv_f32(r_arr[5]),
-            srgb_inv_f32(r_arr[6]),
-            srgb_inv_f32(r_arr[7]),
-        ]);
-        let g_lin = f32x8::new([
-            srgb_inv_f32(g_arr[0]),
-            srgb_inv_f32(g_arr[1]),
-            srgb_inv_f32(g_arr[2]),
-            srgb_inv_f32(g_arr[3]),
-            srgb_inv_f32(g_arr[4]),
-            srgb_inv_f32(g_arr[5]),
-            srgb_inv_f32(g_arr[6]),
-            srgb_inv_f32(g_arr[7]),
-        ]);
-        let b_lin = f32x8::new([
-            srgb_inv_f32(b_arr[0]),
-            srgb_inv_f32(b_arr[1]),
-            srgb_inv_f32(b_arr[2]),
-            srgb_inv_f32(b_arr[3]),
-            srgb_inv_f32(b_arr[4]),
-            srgb_inv_f32(b_arr[5]),
-            srgb_inv_f32(b_arr[6]),
-            srgb_inv_f32(b_arr[7]),
-        ]);
+        let r_lin = srgb_inv_f32x8(r_norm);
+        let g_lin = srgb_inv_f32x8(g_norm);
+        let b_lin = srgb_inv_f32x8(b_norm);
 
         let x = r_lin * f32x8::splat(0.4124564)
             + g_lin * f32x8::splat(0.3575761)
@@ -176,9 +155,9 @@ pub fn rgb_to_xyz_batch(rgb: &[[u8; 3]]) -> Vec<[f32; 3]> {
 /// Process a batch of XYZ pixels into CIE L*a*b* via D65 normalization + transfer.
 ///
 /// Processes 8 pixels at a time using `f32x8` SIMD lanes for the linear
-/// combination (L, a, b formulas); extracts lanes for the scalar piecewise
-/// LAB transfer function and re-packs. Remainder pixels fall back to the
-/// scalar [`crate::xyz::lab`], converting its f64 output to f32.
+/// combination (L, a, b formulas) AND the CIE LAB piecewise transfer
+/// (vectorized via mask-blend with `f32x8::cbrt`). Remainder pixels fall
+/// back to the scalar [`crate::xyz::lab`], converting its f64 output to f32.
 pub fn xyz_to_lab_batch(xyz: &[[f32; 3]]) -> Vec<[f32; 3]> {
     use wide::f32x8;
 
@@ -226,39 +205,9 @@ pub fn xyz_to_lab_batch(xyz: &[[f32; 3]]) -> Vec<[f32; 3]> {
         let y_norm = y / yn;
         let z_norm = z / zn;
 
-        let x_arr = x_norm.to_array();
-        let y_arr = y_norm.to_array();
-        let z_arr = z_norm.to_array();
-        let fx = f32x8::new([
-            lab_transfer_f32(x_arr[0]),
-            lab_transfer_f32(x_arr[1]),
-            lab_transfer_f32(x_arr[2]),
-            lab_transfer_f32(x_arr[3]),
-            lab_transfer_f32(x_arr[4]),
-            lab_transfer_f32(x_arr[5]),
-            lab_transfer_f32(x_arr[6]),
-            lab_transfer_f32(x_arr[7]),
-        ]);
-        let fy = f32x8::new([
-            lab_transfer_f32(y_arr[0]),
-            lab_transfer_f32(y_arr[1]),
-            lab_transfer_f32(y_arr[2]),
-            lab_transfer_f32(y_arr[3]),
-            lab_transfer_f32(y_arr[4]),
-            lab_transfer_f32(y_arr[5]),
-            lab_transfer_f32(y_arr[6]),
-            lab_transfer_f32(y_arr[7]),
-        ]);
-        let fz = f32x8::new([
-            lab_transfer_f32(z_arr[0]),
-            lab_transfer_f32(z_arr[1]),
-            lab_transfer_f32(z_arr[2]),
-            lab_transfer_f32(z_arr[3]),
-            lab_transfer_f32(z_arr[4]),
-            lab_transfer_f32(z_arr[5]),
-            lab_transfer_f32(z_arr[6]),
-            lab_transfer_f32(z_arr[7]),
-        ]);
+        let fx = lab_transfer_f32x8(x_norm);
+        let fy = lab_transfer_f32x8(y_norm);
+        let fz = lab_transfer_f32x8(z_norm);
 
         let l = fy * f32x8::splat(116.0) - f32x8::splat(16.0);
         let a = (fx - fy) * f32x8::splat(500.0);
@@ -345,39 +294,9 @@ pub fn rgb_to_lab_batch(rgb: &[[u8; 3]]) -> Vec<[f32; 3]> {
         let g_norm = g / f32x8::splat(255.0);
         let b_norm = b / f32x8::splat(255.0);
 
-        let r_arr = r_norm.to_array();
-        let g_arr = g_norm.to_array();
-        let b_arr = b_norm.to_array();
-        let r_lin = f32x8::new([
-            srgb_inv_f32(r_arr[0]),
-            srgb_inv_f32(r_arr[1]),
-            srgb_inv_f32(r_arr[2]),
-            srgb_inv_f32(r_arr[3]),
-            srgb_inv_f32(r_arr[4]),
-            srgb_inv_f32(r_arr[5]),
-            srgb_inv_f32(r_arr[6]),
-            srgb_inv_f32(r_arr[7]),
-        ]);
-        let g_lin = f32x8::new([
-            srgb_inv_f32(g_arr[0]),
-            srgb_inv_f32(g_arr[1]),
-            srgb_inv_f32(g_arr[2]),
-            srgb_inv_f32(g_arr[3]),
-            srgb_inv_f32(g_arr[4]),
-            srgb_inv_f32(g_arr[5]),
-            srgb_inv_f32(g_arr[6]),
-            srgb_inv_f32(g_arr[7]),
-        ]);
-        let b_lin = f32x8::new([
-            srgb_inv_f32(b_arr[0]),
-            srgb_inv_f32(b_arr[1]),
-            srgb_inv_f32(b_arr[2]),
-            srgb_inv_f32(b_arr[3]),
-            srgb_inv_f32(b_arr[4]),
-            srgb_inv_f32(b_arr[5]),
-            srgb_inv_f32(b_arr[6]),
-            srgb_inv_f32(b_arr[7]),
-        ]);
+        let r_lin = srgb_inv_f32x8(r_norm);
+        let g_lin = srgb_inv_f32x8(g_norm);
+        let b_lin = srgb_inv_f32x8(b_norm);
 
         let x = r_lin * f32x8::splat(0.4124564)
             + g_lin * f32x8::splat(0.3575761)
@@ -398,39 +317,9 @@ pub fn rgb_to_lab_batch(rgb: &[[u8; 3]]) -> Vec<[f32; 3]> {
         let y_norm = y / yn;
         let z_norm = z / zn;
 
-        let x_arr = x_norm.to_array();
-        let y_arr = y_norm.to_array();
-        let z_arr = z_norm.to_array();
-        let fx = f32x8::new([
-            lab_transfer_f32(x_arr[0]),
-            lab_transfer_f32(x_arr[1]),
-            lab_transfer_f32(x_arr[2]),
-            lab_transfer_f32(x_arr[3]),
-            lab_transfer_f32(x_arr[4]),
-            lab_transfer_f32(x_arr[5]),
-            lab_transfer_f32(x_arr[6]),
-            lab_transfer_f32(x_arr[7]),
-        ]);
-        let fy = f32x8::new([
-            lab_transfer_f32(y_arr[0]),
-            lab_transfer_f32(y_arr[1]),
-            lab_transfer_f32(y_arr[2]),
-            lab_transfer_f32(y_arr[3]),
-            lab_transfer_f32(y_arr[4]),
-            lab_transfer_f32(y_arr[5]),
-            lab_transfer_f32(y_arr[6]),
-            lab_transfer_f32(y_arr[7]),
-        ]);
-        let fz = f32x8::new([
-            lab_transfer_f32(z_arr[0]),
-            lab_transfer_f32(z_arr[1]),
-            lab_transfer_f32(z_arr[2]),
-            lab_transfer_f32(z_arr[3]),
-            lab_transfer_f32(z_arr[4]),
-            lab_transfer_f32(z_arr[5]),
-            lab_transfer_f32(z_arr[6]),
-            lab_transfer_f32(z_arr[7]),
-        ]);
+        let fx = lab_transfer_f32x8(x_norm);
+        let fy = lab_transfer_f32x8(y_norm);
+        let fz = lab_transfer_f32x8(z_norm);
 
         let l = fy * f32x8::splat(116.0) - f32x8::splat(16.0);
         let a = (fx - fy) * f32x8::splat(500.0);
@@ -459,4 +348,87 @@ pub fn rgb_to_lab_batch(rgb: &[[u8; 3]]) -> Vec<[f32; 3]> {
     }
 
     result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use wide::f32x8;
+
+    /// Scalar reference for sRGB inverse nonlinear transform (test-only).
+    fn srgb_inv_f32(c: f32) -> f32 {
+        if c > 0.04045 {
+            ((c + 0.055) / 1.055).powf(2.4)
+        } else {
+            c / 12.92
+        }
+    }
+
+    /// Scalar reference for CIE LAB transfer function (test-only).
+    fn lab_transfer_f32(t: f32) -> f32 {
+        let ft = (6.0_f32 / 29.0).powi(3);
+        if t > ft {
+            t.cbrt()
+        } else {
+            7.787 * t + 16.0 / 116.0
+        }
+    }
+
+    /// Behavior: `srgb_inv_f32x8` must match the scalar `srgb_inv_f32` for
+    /// representative values across all 8 SIMD lanes.
+    ///
+    /// Inputs span the piecewise threshold (0.04045), dark values, bright
+    /// values, and the boundary itself.  Tolerance: f32::EPSILON * 1000
+    /// (generous enough to absorb any subnormal or micro-architectural
+    /// quirk while catching real algorithmic divergence).
+    #[test]
+    fn srgb_inv_f32x8_matches_scalar() {
+        const TOL: f32 = f32::EPSILON * 1000.0;
+        // Representative inputs across the piecewise boundary
+        let inputs = [0.0_f32, 0.01, 0.04045, 0.04046, 0.5, 0.75, 1.0, 2.0];
+        let v = f32x8::new(inputs);
+        // This call will FAIL TO COMPILE until the function exists:
+        let result = srgb_inv_f32x8(v).to_array();
+
+        for i in 0..8 {
+            let want = srgb_inv_f32(inputs[i]);
+            let diff = (result[i] - want).abs();
+            assert!(
+                diff <= TOL,
+                "lane {i}: srgb_inv_f32x8({})={}, scalar={}, diff={:.2e} > tol",
+                inputs[i],
+                result[i],
+                want,
+                diff,
+            );
+        }
+    }
+
+    /// Behavior: `lab_transfer_f32x8` must match the scalar `lab_transfer_f32`
+    /// for representative values across all 8 SIMD lanes.
+    ///
+    /// Inputs span the CIE LAB piecewise threshold `ft = (6/29)³ ≈ 0.008856`,
+    /// plus dark and bright values. Tolerance: f32::EPSILON * 1000.
+    #[test]
+    fn lab_transfer_f32x8_matches_scalar() {
+        const TOL: f32 = f32::EPSILON * 1000.0;
+        let ft = (6.0_f32 / 29.0).powi(3); // ≈ 0.008856
+        let inputs = [0.0_f32, 0.001, ft * 0.5, ft, ft * 1.01, 0.1, 0.5, 1.0];
+        let v = f32x8::new(inputs);
+        // This call will FAIL TO COMPILE until the function exists:
+        let result = lab_transfer_f32x8(v).to_array();
+
+        for i in 0..8 {
+            let want = lab_transfer_f32(inputs[i]);
+            let diff = (result[i] - want).abs();
+            assert!(
+                diff <= TOL,
+                "lane {i}: lab_transfer_f32x8({})={}, scalar={}, diff={:.2e} > tol",
+                inputs[i],
+                result[i],
+                want,
+                diff,
+            );
+        }
+    }
 }
