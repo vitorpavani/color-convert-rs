@@ -144,11 +144,7 @@ fn rgb_to_lab_batch_matches_two_step() {
         let two_step = simd::xyz_to_lab_batch(&simd::rgb_to_xyz_batch(&pixels));
         let fused = simd::rgb_to_lab_batch(&pixels);
 
-        assert_eq!(
-            fused.len(),
-            two_step.len(),
-            "length mismatch for n={n}"
-        );
+        assert_eq!(fused.len(), two_step.len(), "length mismatch for n={n}");
 
         for (i, (f, t)) in fused.iter().zip(two_step.iter()).enumerate() {
             let _f32_check: [f32; 3] = *f;
