@@ -26,6 +26,7 @@ pub mod probe;
 pub mod rgb;
 pub mod simd;
 pub mod simd_hsl;
+pub mod simd_hsv;
 pub mod xyz;
 
 pub use convert::{Color, Model, convert, convert_rounded};
