@@ -1,27 +1,38 @@
-//! CPU-SIMD batch conversion for rgb→hsl using mask-blend hue selection.
+//! CPU-SIMD batch conversion for rgb↔hsl using mask-blend selection.
 //!
-//! Uses [`wide::f32x8`] to process 8 pixels at once. The scalar reference
-//! is [`crate::rgb::hsl`] which normalises RGB to [0,1], finds min/max/delta,
-//! computes hue via a 3-way branch on which channel is max, sat via a
-//! lightness-based branch, and scales to h∈[0,360], s∈[0,100], l∈[0,100].
+//! Uses [`wide::f32x8`] to process 8 pixels at once.
 //!
-//! This SIMD path replaces per-pixel branching with vectorised mask-blend:
-//! all three candidate hue expressions are computed for all 8 lanes and the
-//! correct one is selected by blending with the channel-maximum masks. The
-//! achromatic case (max==min, delta==0) is guarded by a second blend that
-//! forces hue and saturation to zero. Saturation also uses a mask-blend on
-//! the lightness threshold, matching the JS branch logic exactly.
+//! ## rgb→hsl ([`rgb_to_hsl_batch`])
+//!
+//! The scalar reference is [`crate::rgb::hsl`], which normalises RGB to
+//! [0,1], finds min/max/delta, computes hue via a 3-way branch on which
+//! channel is max, sat via a lightness-based branch, and scales to
+//! h∈[0,360], s∈[0,100], l∈[0,100]. This SIMD path replaces branching
+//! with mask-blend on all three candidate hue expressions. The achromatic
+//! case (max==min) forces hue and saturation to zero via blend.
+//!
+//! ## hsl→rgb ([`hsl_to_rgb_batch`])
+//!
+//! The scalar reference is [`crate::hsl::rgb`], which normalises HSL to
+//! [0,1], computes t1/t2 from s and l, then applies a 4-way piecewise
+//! function (`channel`) per RGB channel with offsets +1/3, 0, -1/3.
+//! This SIMD path computes all four piecewise candidates concurrently
+//! and selects via mask-blend in reverse if/else-if precedence. The
+//! achromatic case (s==0) forces r=g=b=l*255 via mask-blend.
 //!
 //! ## Tolerance
 //!
-//! Each SIMD lane performs the same sequence of operations as the scalar f64
-//! route in f32 instead. f32 has ~7 decimal digits of precision vs f64's
-//! ~15; the hue division by delta (which can be as small as 1/255≈0.004)
-//! amplifies this gap by up to ~250×, reaching ~3e-4 in the worst case.
+//! Each SIMD lane uses f32 (~7 decimal digits) vs scalar f64 (~15).
 //!
+//! For rgb→hsl: hue division by delta (as small as 1/255≈0.004) amplifies
+//! the gap to ~3e-4 in the worst case.
 //! - h (0–360): absolute tolerance ≤ 1e-3
 //! - s (0–100): absolute tolerance ≤ 1e-3
 //! - l (0–100): absolute tolerance ≤ 1e-3
+//!
+//! For hsl→rgb: piecewise linear interpolation in [0,1] scaled by 255;
+//! the f32 vs f64 gap is ~3e-5 in [0,255].
+//! - r/g/b (0–255): absolute tolerance ≤ 1e-3
 //!
 //! See `tests/simd_hsl_routes.rs`.
 
