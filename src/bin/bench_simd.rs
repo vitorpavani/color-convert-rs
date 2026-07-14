@@ -513,8 +513,7 @@ fn main() {
 
     // ── CMYK routes ───────────────────────────────────────────────────
     // rgb→cmyk (scalar batch baseline)
-    let cmyk_scalar_ms =
-        bench_batch(&pixels, warmup_iters, timed_iters, rgb_to_cmyk_scalar_batch);
+    let cmyk_scalar_ms = bench_batch(&pixels, warmup_iters, timed_iters, rgb_to_cmyk_scalar_batch);
     let cmyk_scalar_mps = (n as f64 / 1e6) / (cmyk_scalar_ms / 1000.0);
     append_record(
         &ctx,
