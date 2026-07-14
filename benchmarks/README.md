@@ -1,13 +1,26 @@
+---
+title: "benchmarks/ — 3-tier measurement harness"
+type: benchmark-rollup
+aliases: ["benchmark rollup", "ccrs benchmarks", "results rollup", "3-tier harness"]
+tags: [color-convert-rs, benchmark, simd, gpu, throughput, self-improvement]
+last_updated: 2026-07-14
+kept: 10
+dropped: 2
+waves: 5
+relates-to: ["[[docs/ARCHITECTURE_REVIEW|Architecture Review]]", "[[benchmarks/results-ledger|Results Ledger]]", "[[concepts/keep-or-revert-rule]]", "[[concepts/gpu-transfer-bound-kernel]]", "[[concepts/cpu-simd-hot-path]]"]
+---
+
 # benchmarks/ — 3-tier measurement harness
 
 This directory holds the head-to-head benchmark harness and the **committed, append-only results
-ledger** that proves whether the port is improving. See `AGENTS.md` → "Measurement discipline" and
-skill `benchmark-ledger` for the rules.
+ledger** that proves whether the port is improving. See [[AGENTS|the development contract]] →
+"Measurement discipline" and the [[concepts/keep-or-revert-rule|benchmark-ledger rules]]. The full
+architecture context lives in [[docs/ARCHITECTURE_REVIEW|the architecture review]].
 
 > The harness is live: the JS runner (`js/bench.mjs`), the Rust `bench` / `bench_simd` binaries,
 > and the GPU runner (`bench_gpu` via `run-bench-gpu.sh`) all write to `results.jsonl`. The
-> rollup below reflects the CPU-SIMD self-improvement waves (issues #58–#79); see
-> [`docs/ARCHITECTURE_REVIEW.md`](../docs/ARCHITECTURE_REVIEW.md) for the full review.
+> rollup below reflects the CPU-SIMD self-improvement waves (issues #58–#87); see
+> [[docs/ARCHITECTURE_REVIEW|the architecture review]] for the full review.
 
 ## The three tiers
 
@@ -341,4 +354,12 @@ those routes into `benchmarks/js/bench.mjs`); every dropped change is recorded a
 > transfer-bound GPU path (see the #24 analysis) whose bottleneck is PCIe, not compute. Further
 > waves would increasingly produce *drops* rather than *keeps* — the honest signal that the
 > CPU-SIMD improvement surface is effectively exhausted. See
-> [`docs/ARCHITECTURE_REVIEW.md`](../docs/ARCHITECTURE_REVIEW.md) for the full review.
+> [[docs/ARCHITECTURE_REVIEW|the architecture review]] for the full review.
+
+## See also
+
+- [[docs/ARCHITECTURE_REVIEW|Architecture Review]] — the layered architecture + full outcomes analysis.
+- [[benchmarks/results-ledger|Results Ledger]] — the append-only `results.jsonl` source of truth.
+- [[concepts/keep-or-revert-rule]] — the measurement discipline every wave obeys.
+- [[concepts/gpu-transfer-bound-kernel]] — why `#24` GPU workgroup tuning was dropped.
+- [[concepts/cpu-simd-hot-path]] — why these routes are the optimization surface.
