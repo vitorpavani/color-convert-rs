@@ -1,10 +1,11 @@
 //! CPU-SIMD batch conversion routes for hot matrix-heavy paths.
 //!
 //! Uses the [`wide`] crate for portable explicit SIMD (f32x8 lanes) to
-//! process 8 pixels at once. The matrix multiply and linear combination
-//! parts are SIMD-accelerated; piecewise nonlinear transforms (sRGB gamma,
-//! LAB cube-root transfer) extract individual lanes, call the scalar
-//! reference functions, and re-pack.
+//! process 8 pixels at once. Both the matrix multiply/linear-combination
+//! AND the piecewise nonlinear transfer functions (sRGB gamma via `powf`,
+//! LAB cube-root via `cbrt`) are SIMD-accelerated through mask-blend
+//! lane selection — no scalar-lane de-vectorization anywhere in the hot
+//! path.
 //!
 //! ## Routes covered
 //!
@@ -65,10 +66,10 @@ fn lab_transfer_f32x8(t: wide::f32x8) -> wide::f32x8 {
 
 /// Process a batch of RGB pixels into XYZ via sRGB inverse gamma + matrix.
 ///
-/// Processes 8 pixels at a time using `f32x8` SIMD lanes for the matrix
-/// multiply; extracts lanes for the scalar piecewise gamma function and
-/// re-packs. Remainder pixels (final 0–7) fall back to the scalar
-/// [`crate::rgb::xyz`], converting its f64 output to f32.
+/// Processes 8 pixels at a time using `f32x8` SIMD lanes for both the
+/// sRGB inverse nonlinear transform (vectorized via mask-blend) and the
+/// sRGB→XYZ matrix multiply. Remainder pixels (final 0–7) fall back to
+/// the scalar [`crate::rgb::xyz`], converting its f64 output to f32.
 pub fn rgb_to_xyz_batch(rgb: &[[u8; 3]]) -> Vec<[f32; 3]> {
     use wide::f32x8;
 
@@ -154,9 +155,9 @@ pub fn rgb_to_xyz_batch(rgb: &[[u8; 3]]) -> Vec<[f32; 3]> {
 /// Process a batch of XYZ pixels into CIE L*a*b* via D65 normalization + transfer.
 ///
 /// Processes 8 pixels at a time using `f32x8` SIMD lanes for the linear
-/// combination (L, a, b formulas); extracts lanes for the scalar piecewise
-/// LAB transfer function and re-packs. Remainder pixels fall back to the
-/// scalar [`crate::xyz::lab`], converting its f64 output to f32.
+/// combination (L, a, b formulas) AND the CIE LAB piecewise transfer
+/// (vectorized via mask-blend with `f32x8::cbrt`). Remainder pixels fall
+/// back to the scalar [`crate::xyz::lab`], converting its f64 output to f32.
 pub fn xyz_to_lab_batch(xyz: &[[f32; 3]]) -> Vec<[f32; 3]> {
     use wide::f32x8;
 
