@@ -19,3 +19,6 @@ benchmarks/tmp/
 
 # CubeCL/wgpu build-time linker probe artifact
 libnull.rlib
+
+# Nix / direnv
+.direnv/
