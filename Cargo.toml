@@ -12,6 +12,9 @@ name = "bench"
 [[bin]]
 name = "bench_gpu"
 
+[[bin]]
+name = "bench_simd_parallel"
+
 [dependencies]
 # Derive-based library error enum: library code returns Result<_, Error> with
 # no unwrap()/expect() in lib paths (Rule 9: issue #4).
