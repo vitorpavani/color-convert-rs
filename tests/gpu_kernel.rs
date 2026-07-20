@@ -158,8 +158,7 @@ fn gpu_kernel_rgb_to_hsl_matches_cpu_within_tolerance() {
 
             for (i, hsl_gpu) in gpu_hsl.iter().enumerate() {
                 let cpu_ref = color_convert_rs::rgb::hsl(test_vectors[i]);
-                let cpu_hsl: [f32; 3] =
-                    [cpu_ref[0] as f32, cpu_ref[1] as f32, cpu_ref[2] as f32];
+                let cpu_hsl: [f32; 3] = [cpu_ref[0] as f32, cpu_ref[1] as f32, cpu_ref[2] as f32];
 
                 let tol: f32 = 0.1;
                 assert!(
@@ -222,8 +221,7 @@ fn gpu_kernel_rgb_to_hsv_matches_cpu_within_tolerance() {
 
             for (i, hsv_gpu) in gpu_hsv.iter().enumerate() {
                 let cpu_ref = color_convert_rs::rgb::hsv(test_vectors[i]);
-                let cpu_hsv: [f32; 3] =
-                    [cpu_ref[0] as f32, cpu_ref[1] as f32, cpu_ref[2] as f32];
+                let cpu_hsv: [f32; 3] = [cpu_ref[0] as f32, cpu_ref[1] as f32, cpu_ref[2] as f32];
 
                 let tol: f32 = 0.1;
                 assert!(
