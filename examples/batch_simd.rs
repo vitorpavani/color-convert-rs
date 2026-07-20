@@ -21,7 +21,10 @@ fn main() {
     let first = &lab[0];
     let last = &lab[n - 1];
     println!("Converted {n} pixels rgb → lab in {elapsed:?}");
-    println!("  first: [{:.1}, {:.1}, {:.1}]", first[0], first[1], first[2]);
+    println!(
+        "  first: [{:.1}, {:.1}, {:.1}]",
+        first[0], first[1], first[2]
+    );
     println!("  last:  [{:.1}, {:.1}, {:.1}]", last[0], last[1], last[2]);
     let throughput = (n as f64) / elapsed.as_secs_f64();
     println!("  throughput: {throughput:.0} pixels/sec");
