@@ -107,6 +107,21 @@ const ROUTES = {
   },
 };
 
+// ── Inverse routes (non-rgb input) — pre-convert inputs outside timing ──
+// These are measured separately: input generation is NOT timed, only the
+// inverse conversion itself.  N=10M (JS OOMs at 50M on this host).
+const INVERSE_ROUTES = {
+  'oklab->rgb': {
+    prepare: (pixels) => pixels.map(([r, g, b]) => convert.rgb.oklab(r, g, b)),
+    run: (oklabPixels) => {
+      for (let j = 0; j < oklabPixels.length; j++) {
+        const [l, a, b] = oklabPixels[j];
+        convert.oklab.rgb(l, a, b);
+      }
+    },
+  },
+};
+
 // ── Build a schema-conformant JSONL record ─────────────────────────────
 function makeRecord(bestNs, route) {
   const bestMs = bestNs / 1e6;
@@ -170,6 +185,66 @@ for (const route of routeNames) {
   );
 }
 
+// ── Inverse routes (pre-convert, time only the inverse) ─────────────────
+const INVERSE_N = 10_000_000; // JS OOMs at 50M — use 10M
+const inversePixels = generatePixels(INVERSE_N);
+
+const inverseRouteNames = Object.keys(INVERSE_ROUTES);
+for (const route of inverseRouteNames) {
+  const { prepare, run } = INVERSE_ROUTES[route];
+
+  // Pre-convert: generate input data for the inverse route (NOT timed)
+  const preparedInput = prepare(inversePixels);
+
+  // Warmup
+  for (let w = 0; w < WARMUP; w++) {
+    run(preparedInput);
+  }
+
+  // Timed iterations
+  let bestNs = Infinity;
+  for (let i = 0; i < TIMED_ITERS; i++) {
+    const start = process.hrtime.bigint();
+    run(preparedInput);
+    const elapsedNs = Number(process.hrtime.bigint() - start);
+    if (elapsedNs < bestNs) bestNs = elapsedNs;
+  }
+
+  const bestMs = bestNs / 1e6;
+  const throughputMps = (INVERSE_N / 1e6) / (bestMs / 1000);
+
+  const record = {
+    ts: new Date().toISOString(),
+    commit: (() => {
+      try { return execSync('git rev-parse --short HEAD', { cwd: PROJECT_ROOT, encoding: 'utf-8' }).trim(); }
+      catch { return 'unknown'; }
+    })(),
+    issue: parseInt(process.env.BENCH_ISSUE || '100', 10),
+    route,
+    tier: 'js',
+    input_size: INVERSE_N,
+    metric: 'throughput_mpx_s',
+    value: Math.round(throughputMps * 100) / 100,
+    ms: Math.round(bestMs * 1000) / 1000,
+    iters: TIMED_ITERS,
+    warmup: WARMUP,
+    host: os.hostname(),
+    gpu_present: false,
+    decision: 'baseline',
+    notes: `JS color-convert@3.1.3 baseline (inverse route), N=${INVERSE_N.toLocaleString()}`,
+  };
+
+  fs.appendFileSync(RESULTS_PATH, JSON.stringify(record) + '\n');
+
+  const msOut = record.ms.toFixed(3);
+  const mpsOut = record.value.toFixed(1);
+  process.stdout.write(
+    `${route.padEnd(18)}  N=${String(INVERSE_N).padStart(8)}  ` +
+      `best=${msOut.padStart(9)} ms  ` +
+      `${mpsOut.padStart(10)} MP/s  [JS inverse]\n`,
+  );
+}
+
 process.stdout.write(
-  `\nAppended ${routeNames.length} records to ${RESULTS_PATH}\n`,
+  `\nAppended ${routeNames.length + inverseRouteNames.length} records to ${RESULTS_PATH}\n`,
 );
