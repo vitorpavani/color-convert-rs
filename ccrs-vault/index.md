@@ -3,7 +3,7 @@ tags: [index]
 aliases:
   - Home
   - color-convert-rs Docs
-updated: 2026-07-13
+updated: 2026-07-20
 ---
 
 # color-convert-rs
@@ -12,6 +12,9 @@ A behavior-faithful Rust port of the npm [`color-convert`](https://github.com/Qi
 library, GPU-accelerated with CubeCL and a native Rust-SIMD CPU path — built **fully agentically**
 via a Red/Green/Blue TDD loop. This vault holds the deep documentation: decisions, engineering
 journal, and the two article threads.
+
+> **Status:** Production-ready. 16 SIMD batch routes, rayon multi-core, GPU kernels, sRGB LUT +
+> fast cbrt. rgb→lab: **111.3 MP/s** single-core (10.3×), **164.0 MP/s** multi-core (15.2×).
 
 ## Vault Structure
 
@@ -47,6 +50,7 @@ ccrs-vault/
 | ---- | ---------- |
 | How the 3 tiers are measured | [benchmarks/README](../benchmarks/README.md) |
 | The results-ledger schema | [benchmarks/SCHEMA](../benchmarks/SCHEMA.md) |
+| The 10-wave optimization journey (10.8 → 111.3 MP/s) | [[01-optimization-journey]] |
 | Why a "trivial" library still shows a big win | [ADR-002](adrs/002-behavior-faithful-validation-and-benchmark-honesty.md) |
 
 ### ✍️ Follow the articles
@@ -66,6 +70,7 @@ ccrs-vault/
 ### engineering/
 
 - [00-benchmark-methodology](engineering/00-benchmark-methodology.md) — how we measure, and why a simple library still demonstrates real gains
+- [01-optimization-journey](engineering/01-optimization-journey.md) — the 10-wave optimization drive (33 kept / 7 dropped, 10.3× speedup)
 
 ### articles/
 
