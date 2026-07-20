@@ -1044,7 +1044,12 @@ fn main() {
     );
     println!(
         "{:<18}  N={:>8}  best={:>9.3} ms  {:>10.1} MP/s  [SIMD]  speedup={:.2}x  decision={}",
-        "oklab->rgb (SIMD)", n, oklab_rgb_simd_ms, oklab_rgb_simd_mps, oklab_rgb_speedup, oklab_rgb_decision
+        "oklab->rgb (SIMD)",
+        n,
+        oklab_rgb_simd_ms,
+        oklab_rgb_simd_mps,
+        oklab_rgb_speedup,
+        oklab_rgb_decision
     );
 
     println!("\nAppended 23 records to {}", RESULTS_PATH);
