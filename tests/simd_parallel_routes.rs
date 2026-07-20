@@ -11,7 +11,8 @@
 //! over CHUNK, and N with a partial-SIMD-tile remainder).
 
 use color_convert_rs::{
-    simd, simd_apple, simd_hsl, simd_oklab, simd_oklab_rgb, simd_parallel, simd_xyz,
+    simd, simd_apple, simd_cmyk, simd_hsl, simd_lab_xyz, simd_oklab, simd_oklab_rgb, simd_parallel,
+    simd_xyz,
 };
 
 /// Deterministic RGB pixel generator (mulberry32, seed=42) — matches the harness.
@@ -99,5 +100,72 @@ fn par_batch_matches_serial_rgb_to_apple_and_oklab_rgb() {
         let s_oklabb = simd_oklab_rgb::oklab_to_rgb_batch(&oklab_inputs);
         let p_oklabb = simd_parallel::par_batch(&oklab_inputs, simd_oklab_rgb::oklab_to_rgb_batch);
         assert_eq!(s_oklabb, p_oklabb, "differs at n={n} (oklab->rgb)");
+    }
+}
+
+// ── Chunk-size sweep correctness (tuning experiment, #122) ──────────────
+
+/// Chunk sizes to test: default 65_536 plus the 3 larger candidates.
+const TUNING_CHUNK_SIZES: [usize; 4] = [65_536, 262_144, 524_288, 1_048_576];
+
+/// TDD exemption (tuning, not behavior change): `par_batch_chunked` must
+/// produce element-identical output to the serial batch for ALL chunk sizes,
+/// for every route that will be benchmarked in the sweep. This is a
+/// characterization test — it already passes conceptually (the underlying
+/// `par_chunks` is order-stable), we just need to pin it.
+
+#[test]
+fn par_batch_chunked_matches_serial_rgb_to_cmyk_all_chunk_sizes() {
+    // [u8;3] -> Vec<[f32;4]> (return type differs from standard forward routes)
+    for &chunk in &TUNING_CHUNK_SIZES {
+        for &n in &CHUNK_BOUNDARY_NS {
+            let pixels = generate_rgb_pixels(n);
+            let serial = simd_cmyk::rgb_to_cmyk_batch(&pixels);
+            let parallel =
+                simd_parallel::par_batch_chunked(&pixels, chunk, simd_cmyk::rgb_to_cmyk_batch);
+            assert_eq!(
+                serial, parallel,
+                "rgb->cmyk differs at n={n}, chunk={chunk}"
+            );
+        }
+    }
+}
+
+#[test]
+fn par_batch_chunked_matches_serial_rgb_to_apple_all_chunk_sizes() {
+    // [u8;3] -> Vec<[f32;3]>, trivial linear scale — most bandwidth-limited.
+    for &chunk in &TUNING_CHUNK_SIZES {
+        for &n in &CHUNK_BOUNDARY_NS {
+            let pixels = generate_rgb_pixels(n);
+            let serial = simd_apple::rgb_to_apple_batch(&pixels);
+            let parallel =
+                simd_parallel::par_batch_chunked(&pixels, chunk, simd_apple::rgb_to_apple_batch);
+            assert_eq!(
+                serial, parallel,
+                "rgb->apple differs at n={n}, chunk={chunk}"
+            );
+        }
+    }
+}
+
+#[test]
+fn par_batch_chunked_matches_serial_lab_to_xyz_all_chunk_sizes() {
+    // [f32;3] -> Vec<[f32;3]>, inverse route — tests f32 input genericity.
+    for &chunk in &TUNING_CHUNK_SIZES {
+        for &n in &CHUNK_BOUNDARY_NS {
+            let pixels = generate_rgb_pixels(n);
+            // Generate lab inputs: rgb→xyz→lab (in-gamut chain).
+            let lab_inputs: Vec<[f32; 3]> = {
+                let xyz_tmp = simd::rgb_to_xyz_batch(&pixels);
+                simd::xyz_to_lab_batch(&xyz_tmp)
+            };
+            let serial = simd_lab_xyz::lab_to_xyz_batch(&lab_inputs);
+            let parallel = simd_parallel::par_batch_chunked(
+                &lab_inputs,
+                chunk,
+                simd_lab_xyz::lab_to_xyz_batch,
+            );
+            assert_eq!(serial, parallel, "lab->xyz differs at n={n}, chunk={chunk}");
+        }
     }
 }
