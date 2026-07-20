@@ -15,10 +15,13 @@ exclude = [
     "/.opencode",
     "/.omo",
     "/.gitignore",
+    "/.github",
     "/AGENTS.md",
-    "/benchmarks/results.jsonl",
+    "/benchmarks",
     "/docs",
     "/ccrs-vault",
+    "/js",
+    "/pkg",
     "/run-bench-gpu.sh",
 ]
 

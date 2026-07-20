@@ -50,3 +50,10 @@ driven from GitHub issues — an orchestrator spawns `red-dev` (writes failing
 test), `green-dev` (minimal code to pass), and `blue-dev` (refactor/review)
 per issue. Every performance change is measured on all 3 tiers and kept only
 if it beats both the JS baseline and the previous Rust iteration.
+
+### Known limitations
+- **`gray.lch` hue**: for achromatic grayscale inputs (chroma=0), the hue is
+  arbitrary. The Rust `lab→lch` function returns 180° (matching the JS
+  `Math.atan2(-0, 0)` behavior preserved through JSON serialization), while
+  `color-convert` returns 0° for genuine positive-zero inputs. Both values
+  produce the same visible color since chroma is 0. Affects 1 of 272 routes.

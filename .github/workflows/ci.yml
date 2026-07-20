@@ -65,8 +65,11 @@ jobs:
         run: cargo check --features wasm --target wasm32-unknown-unknown
       - name: wasm-pack build
         run: wasm-pack build --target nodejs --features wasm
-      - name: Verify npm package structure
+      - name: Copy wasm artifacts to js/
         run: |
-          test -f pkg/color_convert_rs.js
-          test -f pkg/color_convert_rs_bg.wasm
-          test -f pkg/color_convert_rs.d.ts
+          cp pkg/color_convert_rs.js js/
+          cp pkg/color_convert_rs_bg.wasm js/
+          cp pkg/color_convert_rs.d.ts js/
+      - name: Run JS parity test vs color-convert@3.1.3
+        run: |
+          cd js && npm install && npm test

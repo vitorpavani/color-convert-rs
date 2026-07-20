@@ -4,7 +4,7 @@
 //!
 //! # Quick start
 //!
-//! ```no_run
+//! ```
 //! use color_convert_rs::{Color, Model, convert_rounded};
 //!
 //! let orange = Color::Rgb([255.0, 128.0, 0.0]);
