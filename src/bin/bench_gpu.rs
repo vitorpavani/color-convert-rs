@@ -90,98 +90,6 @@ fn benchmark_gpu(
     best_timings.map(|t| (best_ns as f64 / 1_000_000.0, t))
 }
 
-// ── Double-buffered GPU benchmark ──────────────────────────────────────────
-
-fn benchmark_gpu_double_buffered(
-    pixels: &[[u8; 3]],
-    k_chunks: u32,
-    warmup: u32,
-    iters: u32,
-) -> Option<(f64, color_convert_rs::gpu::GpuDoubleBufferTimings)> {
-    for _ in 0..warmup {
-        let _ = color_convert_rs::gpu::rgb_to_lab_gpu_batch_double_buffered(pixels, k_chunks);
-    }
-
-    let mut best_ns = u128::MAX;
-    let mut best_timings: Option<color_convert_rs::gpu::GpuDoubleBufferTimings> = None;
-
-    for _ in 0..iters {
-        let start = Instant::now();
-        let result =
-            color_convert_rs::gpu::rgb_to_lab_gpu_batch_double_buffered_timed(pixels, k_chunks);
-        let elapsed = start.elapsed().as_nanos();
-
-        match result {
-            Some((_vec, timings)) => {
-                if elapsed < best_ns {
-                    best_ns = elapsed;
-                    best_timings = Some(timings);
-                }
-            }
-            None => return None,
-        }
-    }
-
-    best_timings.map(|t| (best_ns as f64 / 1_000_000.0, t))
-}
-
-fn append_gpu_double_buffer_record(
-    route: &str,
-    best_ms: f64,
-    n: usize,
-    iters: u32,
-    warmup: u32,
-    timings: &color_convert_rs::gpu::GpuDoubleBufferTimings,
-) {
-    let throughput_mps = (n as f64 / 1_000_000.0) / (best_ms / 1000.0);
-
-    let escaped_route = route.replace('\\', "\\\\").replace('"', "\\\"");
-    let ts = utc_now_iso();
-    let commit = git_short_sha();
-    let host = hostname();
-    let gpu_present = true;
-
-    let timing_notes = format!(
-        "CubeCL/wgpu double-buffered GPU kernel rgb->lab batch on NVIDIA RTX 2000 Ada; N={}; K={}; upload={:.2}ms compute={:.2}ms readback={:.2}ms",
-        format_number(n),
-        timings.k_chunks,
-        timings.upload_ms,
-        timings.compute_ms,
-        timings.readback_ms,
-    );
-    let escaped_notes = timing_notes.replace('\\', "\\\\").replace('"', "\\\"");
-
-    let record = format!(
-        concat!(
-            r#"{{"ts":"{ts}","commit":"{commit}","issue":114,"#,
-            r#""route":"{route}","tier":"gpu","input_size":{n},"#,
-            r#""metric":"throughput_mpx_s","value":{mps:.2},"ms":{ms:.3},"#,
-            r#""iters":{iters},"warmup":{warmup},"host":"{host}","#,
-            r#""gpu_present":{gp},"decision":"baseline","#,
-            r#""notes":"{notes}"}}"#,
-        ),
-        ts = ts,
-        commit = commit,
-        route = escaped_route,
-        n = n,
-        mps = throughput_mps,
-        ms = best_ms,
-        iters = iters,
-        warmup = warmup,
-        host = host,
-        gp = gpu_present,
-        notes = escaped_notes,
-    );
-
-    let mut file = OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(RESULTS_PATH)
-        .expect("must be able to open results.jsonl for append");
-
-    writeln!(file, "{record}").expect("must be able to write record");
-}
-
 // ── Helpers for JSONL record fields ────────────────────────────────────
 
 fn git_short_sha() -> String {
@@ -295,27 +203,9 @@ fn main() {
     }
 
     let args: Vec<String> = std::env::args().collect();
-
-    // Parse --double-buf <k> flag (optional)
-    let mut k_chunks: Option<u32> = None;
-    let mut positional: Vec<&str> = Vec::new();
-    let mut i = 1;
-    while i < args.len() {
-        if args[i] == "--double-buf" {
-            k_chunks = Some(args.get(i + 1).and_then(|s| s.parse().ok()).unwrap_or(4));
-            i += 2;
-        } else {
-            positional.push(&args[i]);
-            i += 1;
-        }
-    }
-
-    let n: usize = positional
-        .first()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(100_000);
-    let warmup: u32 = positional.get(1).and_then(|s| s.parse().ok()).unwrap_or(3);
-    let iters: u32 = positional.get(2).and_then(|s| s.parse().ok()).unwrap_or(20);
+    let n: usize = args.get(1).and_then(|s| s.parse().ok()).unwrap_or(100_000);
+    let warmup: u32 = args.get(2).and_then(|s| s.parse().ok()).unwrap_or(3);
+    let iters: u32 = args.get(3).and_then(|s| s.parse().ok()).unwrap_or(20);
 
     if n == 0 || warmup == 0 || iters == 0 {
         eprintln!("ERROR: N, warmup, and timed-iters must be > 0");
@@ -331,64 +221,31 @@ fn main() {
 
     let route = "rgb->lab";
 
-    match k_chunks {
-        Some(k) => {
-            println!("Mode: double-buffered, K={k} chunks\n");
-            match benchmark_gpu_double_buffered(&pixels, k, warmup, iters) {
-                None => {
-                    eprintln!("ERROR: GPU became unavailable during benchmark — no record written");
-                    std::process::exit(1);
-                }
-                Some((best_ms, timings)) => {
-                    let throughput_mps = (n as f64 / 1_000_000.0) / (best_ms / 1000.0);
-
-                    append_gpu_double_buffer_record(route, best_ms, n, iters, warmup, &timings);
-
-                    println!(
-                        "{route:<18}  N={n:>8}  best={ms:>9.3} ms  {mps:>10.1} MP/s  K={k}",
-                        route = route,
-                        n = n,
-                        ms = best_ms,
-                        mps = throughput_mps,
-                        k = timings.k_chunks,
-                    );
-                    println!(
-                        "  upload={up:.2}ms  compute={cp:.2}ms  readback={rb:.2}ms",
-                        up = timings.upload_ms,
-                        cp = timings.compute_ms,
-                        rb = timings.readback_ms,
-                    );
-
-                    println!("\nAppended 1 record to {}", RESULTS_PATH);
-                }
-            }
+    match benchmark_gpu(&pixels, warmup, iters) {
+        None => {
+            eprintln!("ERROR: GPU became unavailable during benchmark — no record written");
+            std::process::exit(1);
         }
-        None => match benchmark_gpu(&pixels, warmup, iters) {
-            None => {
-                eprintln!("ERROR: GPU became unavailable during benchmark — no record written");
-                std::process::exit(1);
-            }
-            Some((best_ms, timings)) => {
-                let throughput_mps = (n as f64 / 1_000_000.0) / (best_ms / 1000.0);
+        Some((best_ms, timings)) => {
+            let throughput_mps = (n as f64 / 1_000_000.0) / (best_ms / 1000.0);
 
-                append_gpu_record(route, best_ms, n, iters, warmup, &timings);
+            append_gpu_record(route, best_ms, n, iters, warmup, &timings);
 
-                println!(
-                    "{route:<18}  N={n:>8}  best={ms:>9.3} ms  {mps:>10.1} MP/s",
-                    route = route,
-                    n = n,
-                    ms = best_ms,
-                    mps = throughput_mps,
-                );
-                println!(
-                    "  upload={up:.2}ms  compute={cp:.2}ms  readback={rb:.2}ms",
-                    up = timings.upload_ms,
-                    cp = timings.compute_ms,
-                    rb = timings.readback_ms,
-                );
+            println!(
+                "{route:<18}  N={n:>8}  best={ms:>9.3} ms  {mps:>10.1} MP/s",
+                route = route,
+                n = n,
+                ms = best_ms,
+                mps = throughput_mps,
+            );
+            println!(
+                "  upload={up:.2}ms  compute={cp:.2}ms  readback={rb:.2}ms",
+                up = timings.upload_ms,
+                cp = timings.compute_ms,
+                rb = timings.readback_ms,
+            );
 
-                println!("\nAppended 1 record to {}", RESULTS_PATH);
-            }
-        },
+            println!("\nAppended 1 record to {}", RESULTS_PATH);
+        }
     }
 }
