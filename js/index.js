@@ -77,20 +77,47 @@ function normalizeArgs(args) {
   return args;
 }
 
+const BATCH_THRESHOLD = 300;
+
+function isPixelData(x) {
+  return x instanceof Uint8Array || x instanceof Uint8ClampedArray;
+}
+
 function makeRouteFn(from, to) {
   const routeKey = `${from}.${to}`;
   const jsFn = JS_ROUTES[routeKey];
+  const batchFn = BATCH_FNS[routeKey];
   const toIsString = STRING_MODELS.has(to);
   const fromIsString = STRING_MODELS.has(from);
   const toIsNumber = NUMBER_MODELS.has(to);
 
   let fn;
-  if (jsFn) {
+  if (jsFn || batchFn) {
     fn = function (...args) {
       const a0 = args[0];
       if (a0 === undefined || a0 === null) return a0;
-      if (Array.isArray(a0)) return jsFn(a0);
-      return jsFn(args);
+
+      if (batchFn && isPixelData(a0)) {
+        return batchFn(a0);
+      }
+      if (batchFn && Array.isArray(a0) && a0.length > BATCH_THRESHOLD) {
+        return batchFn(new Uint8Array(a0));
+      }
+
+      if (jsFn) {
+        if (Array.isArray(a0)) return jsFn(a0);
+        return jsFn(args);
+      }
+
+      if (fromIsString) {
+        if (toIsString) return native.convertFromStringToString(from, to, String(a0));
+        if (toIsNumber) return native.convertFromStringToNumber(from, to, String(a0));
+        return native.convertFromString(from, to, String(a0));
+      }
+      const input = Array.isArray(a0) ? a0 : args;
+      if (toIsString) return native.convertToString(from, to, Array.from(input));
+      if (toIsNumber) return native.convertToNumber(from, to, Array.from(input));
+      return native.convertRoute(from, to, Array.from(input));
     };
   } else {
     fn = function (...args) {
