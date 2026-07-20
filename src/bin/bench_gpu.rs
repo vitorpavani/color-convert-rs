@@ -219,8 +219,8 @@ fn main() {
     );
     println!("Warmup: {warmup}   Timed iters: {iters}\n");
 
+    // ── rgb→lab (existing) ──────────────────────────────────────────
     let route = "rgb->lab";
-
     match benchmark_gpu(&pixels, warmup, iters) {
         None => {
             eprintln!("ERROR: GPU became unavailable during benchmark — no record written");
@@ -228,24 +228,121 @@ fn main() {
         }
         Some((best_ms, timings)) => {
             let throughput_mps = (n as f64 / 1_000_000.0) / (best_ms / 1000.0);
-
             append_gpu_record(route, best_ms, n, iters, warmup, &timings);
-
             println!(
                 "{route:<18}  N={n:>8}  best={ms:>9.3} ms  {mps:>10.1} MP/s",
-                route = route,
-                n = n,
-                ms = best_ms,
-                mps = throughput_mps,
+                route = route, n = n, ms = best_ms, mps = throughput_mps,
             );
             println!(
                 "  upload={up:.2}ms  compute={cp:.2}ms  readback={rb:.2}ms",
-                up = timings.upload_ms,
-                cp = timings.compute_ms,
-                rb = timings.readback_ms,
+                up = timings.upload_ms, cp = timings.compute_ms, rb = timings.readback_ms,
             );
-
-            println!("\nAppended 1 record to {}", RESULTS_PATH);
         }
     }
+
+    // ── rgb→hsl (#123) ──────────────────────────────────────────────
+    bench_and_print_gpu_route("rgb->hsl", &pixels, warmup, iters, || {
+        let start = Instant::now();
+        let result = color_convert_rs::gpu::rgb_to_hsl_gpu_batch(&pixels);
+        let ms = start.elapsed().as_secs_f64() * 1000.0;
+        result.map(|v| (ms, v))
+    });
+
+    // ── rgb→hsv (#123) ──────────────────────────────────────────────
+    bench_and_print_gpu_route("rgb->hsv", &pixels, warmup, iters, || {
+        let start = Instant::now();
+        let result = color_convert_rs::gpu::rgb_to_hsv_gpu_batch(&pixels);
+        let ms = start.elapsed().as_secs_f64() * 1000.0;
+        result.map(|v| (ms, v))
+    });
+
+    // ── rgb→cmyk (#123) ─────────────────────────────────────────────
+    {
+        let route = "rgb->cmyk";
+        // Warmup
+        for _ in 0..warmup {
+            if color_convert_rs::gpu::rgb_to_cmyk_gpu_batch(&pixels).is_none() {
+                println!("{route:<18}  GPU unavailable — skipped");
+                return;
+            }
+        }
+        let mut best_ms = f64::MAX;
+        for _ in 0..iters {
+            let start = Instant::now();
+            match color_convert_rs::gpu::rgb_to_cmyk_gpu_batch(&pixels) {
+                Some(_output) => {
+                    let ms = start.elapsed().as_secs_f64() * 1000.0;
+                    if ms < best_ms { best_ms = ms; }
+                }
+                None => { println!("{route:<18}  GPU became unavailable — skipped"); return; }
+            }
+        }
+        let throughput_mps = (n as f64 / 1_000_000.0) / (best_ms / 1000.0);
+        let ts = utc_now_iso(); let commit = git_short_sha(); let host = hostname();
+        let record = format!(
+            r#"{{"ts":"{ts}","commit":"{commit}","issue":123,"route":"{route}","tier":"gpu","input_size":{n},"metric":"throughput_mpx_s","value":{throughput_mps:.2},"ms":{best_ms:.3},"iters":{iters},"warmup":{warmup},"host":"{host}","gpu_present":true,"decision":"reverted","notes":"GPU kernel rgb->cmyk — transfer-bound, expected to lose vs parallel CPU"}}"#,
+        );
+        let mut file = OpenOptions::new().create(true).append(true).open(RESULTS_PATH).expect("open");
+        writeln!(file, "{record}").expect("write");
+        println!("{route:<18}  N={n:>8}  best={ms:>9.3} ms  {mps:>10.1} MP/s", route = route, n = n, ms = best_ms, mps = throughput_mps);
+    }
+
+    println!("\nAppended records to {}", RESULTS_PATH);
+}
+
+/// Simplified bench for routes that don't have a timed variant — wraps
+/// the batch call, records best-of-N wall time.
+fn bench_and_print_gpu_route<F>(
+    route: &str,
+    pixels: &[[u8; 3]],
+    warmup: u32,
+    iters: u32,
+    f: F,
+) where
+    F: Fn() -> Option<(f64, Vec<[f32; 3]>)>,
+{
+    // Warmup
+    for _ in 0..warmup {
+        if f().is_none() {
+            println!("{route:<18}  GPU unavailable — skipped");
+            return;
+        }
+    }
+
+    let mut best_ms = f64::MAX;
+    for _ in 0..iters {
+        match f() {
+            Some((ms, _output)) => {
+                if ms < best_ms {
+                    best_ms = ms;
+                }
+            }
+            None => {
+                println!("{route:<18}  GPU became unavailable — skipped");
+                return;
+            }
+        }
+    }
+
+    let throughput_mps = (pixels.len() as f64 / 1_000_000.0) / (best_ms / 1000.0);
+    let ts = utc_now_iso();
+    let commit = git_short_sha();
+    let host = hostname();
+    let n = pixels.len();
+
+    let record = format!(
+        r#"{{"ts":"{ts}","commit":"{commit}","issue":123,"route":"{route}","tier":"gpu","input_size":{n},"metric":"throughput_mpx_s","value":{throughput_mps:.2},"ms":{best_ms:.3},"iters":{iters},"warmup":{warmup},"host":"{host}","gpu_present":true,"decision":"reverted","notes":"GPU kernel ({route}) — transfer-bound, expected to lose vs parallel CPU"}}"#,
+    );
+
+    let mut file = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(RESULTS_PATH)
+        .expect("must be able to open results.jsonl for append");
+    writeln!(file, "{record}").expect("must be able to write record");
+
+    println!(
+        "{route:<18}  N={n:>8}  best={ms:>9.3} ms  {mps:>10.1} MP/s",
+        route = route, n = n, ms = best_ms, mps = throughput_mps,
+    );
 }
