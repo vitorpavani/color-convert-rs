@@ -6,7 +6,7 @@
 //!
 //! Built with `@napi-rs/cli` or `cargo build --features napi --release`.
 
-use napi::bindgen_prelude::{Float32Array, Uint8Array};
+use napi::bindgen_prelude::{Float32Array, Float64Array, Uint8Array};
 use napi_derive::napi;
 
 use crate::{Color, Model, convert, convert_rounded};
@@ -78,12 +78,10 @@ fn vec_to_color(model: Model, v: &[f64]) -> napi::Result<Color> {
             }
             Ok(Color::Ansi256(v[0] as u16))
         }
-        Model::Hex | Model::Keyword => {
-            Err(napi::Error::new(
-                napi::Status::InvalidArg,
-                "use convert_from_string for hex/keyword source models",
-            ))
-        }
+        Model::Hex | Model::Keyword => Err(napi::Error::new(
+            napi::Status::InvalidArg,
+            "use convert_from_string for hex/keyword source models",
+        )),
     }
 }
 
@@ -102,9 +100,7 @@ fn color_to_vec(color: Color) -> Vec<f64> {
         Color::Hcg(v) => v.to_vec(),
         Color::Apple(v) => v.to_vec(),
         Color::Gray(v) => v.to_vec(),
-        Color::Hex(_) | Color::Keyword(_) | Color::Ansi16(_) | Color::Ansi256(_) => {
-            Vec::new()
-        }
+        Color::Hex(_) | Color::Keyword(_) | Color::Ansi16(_) | Color::Ansi256(_) => Vec::new(),
     }
 }
 
@@ -172,7 +168,7 @@ pub fn convert_from_string(from: String, to: String, input: String) -> napi::Res
             return Err(napi::Error::new(
                 napi::Status::InvalidArg,
                 "use convert_route for numeric models",
-            ))
+            ));
         }
     };
     let result = convert_rounded(from_model, to_model, color).map_err(napi_err)?;
@@ -180,11 +176,7 @@ pub fn convert_from_string(from: String, to: String, input: String) -> napi::Res
 }
 
 #[napi]
-pub fn convert_from_string_to_number(
-    from: String,
-    to: String,
-    input: String,
-) -> napi::Result<u32> {
+pub fn convert_from_string_to_number(from: String, to: String, input: String) -> napi::Result<u32> {
     let from_model = parse_model_napi(&from)?;
     let to_model = parse_model_napi(&to)?;
     let color = match from_model {
@@ -194,7 +186,7 @@ pub fn convert_from_string_to_number(
             return Err(napi::Error::new(
                 napi::Status::InvalidArg,
                 "source must be hex or keyword",
-            ))
+            ));
         }
     };
     let result = convert_rounded(from_model, to_model, color).map_err(napi_err)?;
@@ -223,7 +215,7 @@ pub fn convert_from_string_to_string(
             return Err(napi::Error::new(
                 napi::Status::InvalidArg,
                 "source must be hex or keyword",
-            ))
+            ));
         }
     };
     let result = convert_rounded(from_model, to_model, color).map_err(napi_err)?;
@@ -241,10 +233,7 @@ macro_rules! napi_batch_rgb {
         #[napi]
         pub fn $fn_name(input: Uint8Array) -> Float32Array {
             let raw = input.as_ref();
-            let pixels: Vec<[u8; 3]> = raw
-                .chunks_exact(3)
-                .map(|c| [c[0], c[1], c[2]])
-                .collect();
+            let pixels: Vec<[u8; 3]> = raw.chunks_exact(3).map(|c| [c[0], c[1], c[2]]).collect();
             let result = $simd(&pixels);
             let mut flat = Vec::with_capacity(result.len() * $out_chans);
             for px in &result {
@@ -307,3 +296,36 @@ pub fn rgb_cmyk(r: f64, g: f64, b: f64) -> Vec<f64> {
     let result = convert_rounded(Model::Rgb, Model::Cmyk, color).unwrap();
     color_to_vec(result)
 }
+
+macro_rules! napi_into_fn {
+    ($fn_name:ident, $to_model:path) => {
+        #[napi]
+        pub fn $fn_name(r: f64, g: f64, b: f64, mut output: Float64Array) {
+            let result = convert_rounded(Model::Rgb, $to_model, Color::Rgb([r, g, b])).unwrap();
+            let out = output.as_mut();
+            match result {
+                Color::Rgb(v) => out[..3].copy_from_slice(&v[..]),
+                Color::Hsl(v) => out[..3].copy_from_slice(&v[..]),
+                Color::Hsv(v) => out[..3].copy_from_slice(&v[..]),
+                Color::Hwb(v) => out[..3].copy_from_slice(&v[..]),
+                Color::Cmyk(v) => out[..4].copy_from_slice(&v[..]),
+                Color::Xyz(v) => out[..3].copy_from_slice(&v[..]),
+                Color::Lab(v) => out[..3].copy_from_slice(&v[..]),
+                Color::Lch(v) => out[..3].copy_from_slice(&v[..]),
+                Color::Oklab(v) => out[..3].copy_from_slice(&v[..]),
+                Color::Oklch(v) => out[..3].copy_from_slice(&v[..]),
+                Color::Hcg(v) => out[..3].copy_from_slice(&v[..]),
+                Color::Apple(v) => out[..3].copy_from_slice(&v[..]),
+                Color::Gray(v) => out[..1].copy_from_slice(&v[..]),
+                _ => {}
+            }
+        }
+    };
+}
+
+napi_into_fn!(rgb_hsl_into, Model::Hsl);
+napi_into_fn!(rgb_hsv_into, Model::Hsv);
+napi_into_fn!(rgb_lab_into, Model::Lab);
+napi_into_fn!(rgb_xyz_into, Model::Xyz);
+napi_into_fn!(rgb_oklab_into, Model::Oklab);
+napi_into_fn!(rgb_cmyk_into, Model::Cmyk);

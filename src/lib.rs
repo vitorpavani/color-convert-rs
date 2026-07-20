@@ -48,6 +48,8 @@ pub mod hwb;
 pub mod keyword;
 pub mod lab;
 pub mod lch;
+#[cfg(feature = "napi")]
+pub mod napi;
 pub mod oklab;
 pub mod oklch;
 pub mod probe;
@@ -65,8 +67,6 @@ pub mod simd_oklab;
 pub mod simd_oklab_rgb;
 pub mod simd_parallel;
 pub mod simd_xyz;
-#[cfg(feature = "napi")]
-pub mod napi;
 pub mod xyz;
 
 pub use convert::{Color, Model, convert, convert_rounded};

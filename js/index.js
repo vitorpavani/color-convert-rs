@@ -80,13 +80,28 @@ const BATCH_FNS = {
   'rgb.oklab': native.rgbToOklabBatch,
 };
 
+const INTO_FNS = {
+  'rgb.hsl':   native.rgbHslInto,
+  'rgb.hsv':   native.rgbHsvInto,
+  'rgb.cmyk':  native.rgbCmykInto,
+  'rgb.lab':   native.rgbLabInto,
+  'rgb.xyz':   native.rgbXyzInto,
+  'rgb.oklab': native.rgbOklabInto,
+};
+
 function makeModel(from) {
   const model = {};
   for (const to of MODELS) {
     if (from === to) continue;
     const route = makeRouteFn(from, to);
-    const batchKey = `${from}.${to}`;
-    if (BATCH_FNS[batchKey]) route.batch = BATCH_FNS[batchKey];
+    const key = `${from}.${to}`;
+    if (BATCH_FNS[key]) route.batch = BATCH_FNS[key];
+    if (INTO_FNS[key]) {
+      route.into = function(output, r, g, b) {
+        INTO_FNS[key](r, g, b, output);
+        return output;
+      };
+    }
     model[to] = route;
   }
   Object.defineProperty(model, 'channels', { value: CHANNELS[from] });
