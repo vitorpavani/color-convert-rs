@@ -1,18 +1,26 @@
-//! CubeCL GPU compute kernel for batch colour-space conversion.
+//! CubeCL GPU compute kernels for batch colour-space conversion.
 //!
-//! ## Behaviour
+//! ## Kernels (1-D, one thread per pixel)
 //!
-//! The `rgb→lab` route is implemented as a 1-D kernel: each thread
-//! processes exactly one `[u8; 3]` input pixel and writes one `[f32; 3]`
-//! CIELAB output triplet.  The data buffer is a flat `f32` array of
-//! length `3 * n_pixels`.
+//! | Kernel | Output channels | Tolerance vs CPU f64 | Issue |
+//! |--------|-----------------|----------------------|-------|
+//! | `rgb→lab` | 3 (l,a,b) | ≤ 0.5 | #22 |
+//! | `rgb→hsl` | 3 (h,s,l) | ≤ 0.1 | #123 |
+//! | `rgb→hsv` | 3 (h,s,v) | ≤ 0.1 | #123 |
+//! | `rgb→cmyk` | 4 (c,m,y,k) | ≤ 0.1 | #123 |
 //!
-//! ## Reference behaviour
+//! Each kernel mirrors the corresponding scalar `rgb::*` function exactly,
+//! but computed in `f32` on the GPU rather than `f64` on the CPU.  The
+//! f32→f64 rounding delta is covered by a documented per-route tolerance.
 //!
-//! The kernel mirrors the scalar `rgb::lab` (see `src/rgb.rs`) exactly,
-//! but computed in `f32` on the GPU rather than `f64` on the CPU.  This
-//! means the GPU result will differ from the CPU result by a small f32
-//! rounding delta — the correctness gate uses a documented tolerance.
+//! ## CubeCL 0.10 type constraint
+//!
+//! Standalone `f32` literals (e.g. `0.0_f32`) are treated as Rust `f32`
+//! in the `#[cube]` context, while arithmetic results from `Array` access
+//! are `NativeExpand<f32>`.  Mixing the two in `if`/`else` branches
+//! produces a type mismatch.  The workaround: derive constants from the
+//! input array (`let zero = input[0] * 0.0_f32`), ensuring all branches
+//! share the `NativeExpand<f32>` type.
 //!
 //! ## Host safety (Rule 5)
 //!
@@ -24,17 +32,10 @@
 //!
 //! ## Unsafe
 //!
-//! Two `unsafe` blocks exist: the [`rgb_to_lab_kernel::launch`] call and
+//! `unsafe` blocks exist for each [`kernel::launch`] call and
 //! [`ArrayArg::from_raw_parts`] — both are required by the CubeCL API.
 //! Each is documented with a `// SAFETY:` comment justifying the length
 //! invariant.  No other `unsafe` is used.
-//!
-//! ## Tolerance
-//!
-//! CIELAB `[l, a, b]` f32 GPU output is compared against the f64 CPU
-//! reference with an absolute tolerance ≤ 0.5 in each channel.  This
-//! accounts for the f32→f64 precision loss on the piecewise LAB transfer
-//! function and the matrix multiply.  See the correctness-gate test.
 
 use std::time::Instant;
 
