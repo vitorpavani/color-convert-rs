@@ -498,4 +498,40 @@ mod tests {
             );
         }
     }
+
+    /// Behavior: `fast_cbrt_f32x8` must match `f32x8::cbrt()` within 1e-6
+    /// for representative values spanning the range seen in LAB transfer
+    /// (normalized XYZ ≈ 0.001 through ~1.0, plus larger values for robustness).
+    ///
+    /// The fast cbrt uses a bit-hack initial guess + 2 Newton-Raphson iterations
+    /// and must achieve ~24-bit accuracy (f32 full precision) across the input
+    /// domain. Tolerance: 1e-6 (conservative — NR convergence guarantees <1e-7).
+    #[test]
+    fn fast_cbrt_f32x8_matches_builtin() {
+        const TOL: f32 = 1e-6;
+        // Inputs spanning ~5 orders of magnitude — covers the typical LAB
+        // range (0.001–1.0 after D65 normalization) plus robustness stress.
+        let inputs = [0.001_f32, 0.01, 0.1, 0.5, 1.0, 10.0, 50.0, 100.0];
+        let v = f32x8::new(inputs);
+        // This call will FAIL TO COMPILE until fast_cbrt_f32x8 exists:
+        let result = fast_cbrt_f32x8(v).to_array();
+        let want = v.cbrt().to_array();
+
+        for i in 0..8 {
+            let diff = (result[i] - want[i]).abs();
+            let rel_err = if want[i] > 1e-10 {
+                diff / want[i].abs()
+            } else {
+                diff
+            };
+            assert!(
+                diff <= TOL || rel_err <= TOL,
+                "lane {i}: fast_cbrt_f32x8({})={:.6e}, builtin cbrt={:.6e}, diff={:.2e}",
+                inputs[i],
+                result[i],
+                want[i],
+                diff,
+            );
+        }
+    }
 }
