@@ -17,6 +17,7 @@ use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use color_convert_rs::hsl;
 use color_convert_rs::lab;
+use color_convert_rs::oklab;
 use color_convert_rs::rgb;
 use color_convert_rs::simd;
 use color_convert_rs::simd_apple;
@@ -27,6 +28,7 @@ use color_convert_rs::simd_hsv;
 use color_convert_rs::simd_hwb;
 use color_convert_rs::simd_lab_xyz;
 use color_convert_rs::simd_oklab;
+use color_convert_rs::simd_oklab_rgb;
 use color_convert_rs::simd_xyz;
 use color_convert_rs::xyz;
 
@@ -1054,5 +1056,90 @@ fn main() {
         "lab->xyz (SIMD)", n, lab_xyz_simd_ms, lab_xyz_simd_mps, lab_xyz_speedup, lab_xyz_decision
     );
 
-    println!("\nAppended 24 records to {}", RESULTS_PATH);
+    // ── Oklab→RGB routes (inverse route: oklab input) ─────────────────
+    // Pre-convert RGB→oklab once (NOT timed) so we measure only oklab→rgb.
+    let oklab_inputs: Vec<[f32; 3]> = simd_oklab::rgb_to_oklab_batch(&pixels);
+
+    // oklab->rgb (scalar batch baseline)
+    let mut oklab_rgb_scalar_ms: f64 = f64::MAX;
+    for _ in 0..warmup_iters {
+        let result: Vec<[f64; 3]> = oklab_inputs
+            .iter()
+            .map(|&p| oklab::rgb([p[0] as f64, p[1] as f64, p[2] as f64]))
+            .collect();
+        black_box(result);
+    }
+    for _ in 0..timed_iters {
+        let start = Instant::now();
+        let result: Vec<[f64; 3]> = oklab_inputs
+            .iter()
+            .map(|&p| oklab::rgb([p[0] as f64, p[1] as f64, p[2] as f64]))
+            .collect();
+        black_box(result);
+        oklab_rgb_scalar_ms = oklab_rgb_scalar_ms.min(start.elapsed().as_secs_f64() * 1e3);
+    }
+    let oklab_rgb_scalar_mps = (n as f64 / 1e6) / (oklab_rgb_scalar_ms / 1000.0);
+    append_record(
+        &ctx,
+        RecordParams {
+            route: "oklab->rgb",
+            best_ms: oklab_rgb_scalar_ms,
+            n,
+            iters: timed_iters,
+            warmup: warmup_iters,
+            decision: "baseline",
+            notes: &format!(
+                "Rust scalar batch baseline (pre-SIMD, f64 oklab::rgb), N={}",
+                format_number(n)
+            ),
+            baseline_ref: None,
+        },
+    );
+    println!(
+        "{:<18}  N={:>8}  best={:>9.3} ms  {:>10.1} MP/s  [scalar]",
+        "oklab->rgb (scalar)", n, oklab_rgb_scalar_ms, oklab_rgb_scalar_mps
+    );
+
+    // oklab->rgb (SIMD batch via inverse Oklab matrix + cube + inverse LMS + gamma)
+    let mut oklab_rgb_simd_ms: f64 = f64::MAX;
+    for _ in 0..warmup_iters {
+        black_box(simd_oklab_rgb::oklab_to_rgb_batch(&oklab_inputs));
+    }
+    for _ in 0..timed_iters {
+        let start = Instant::now();
+        black_box(simd_oklab_rgb::oklab_to_rgb_batch(&oklab_inputs));
+        oklab_rgb_simd_ms = oklab_rgb_simd_ms.min(start.elapsed().as_secs_f64() * 1e3);
+    }
+    let oklab_rgb_simd_mps = (n as f64 / 1e6) / (oklab_rgb_simd_ms / 1000.0);
+    let oklab_rgb_kept = oklab_rgb_simd_mps > oklab_rgb_scalar_mps;
+    let oklab_rgb_decision = if oklab_rgb_kept { "kept" } else { "reverted" };
+    let oklab_rgb_speedup = oklab_rgb_simd_mps / oklab_rgb_scalar_mps;
+    append_record(
+        &ctx,
+        RecordParams {
+            route: "oklab->rgb",
+            best_ms: oklab_rgb_simd_ms,
+            n,
+            iters: timed_iters,
+            warmup: warmup_iters,
+            decision: oklab_rgb_decision,
+            notes: &format!(
+                "wide::f32x8 SIMD batch (inverse Oklab + cube + inverse LMS + gamma), N={}, speedup={:.2}x, tol=1e-2",
+                format_number(n),
+                oklab_rgb_speedup
+            ),
+            baseline_ref: Some(&ctx.commit),
+        },
+    );
+    println!(
+        "{:<18}  N={:>8}  best={:>9.3} ms  {:>10.1} MP/s  [SIMD]  speedup={:.2}x  decision={}",
+        "oklab->rgb (SIMD)",
+        n,
+        oklab_rgb_simd_ms,
+        oklab_rgb_simd_mps,
+        oklab_rgb_speedup,
+        oklab_rgb_decision
+    );
+
+    println!("\nAppended 26 records to {}", RESULTS_PATH);
 }
