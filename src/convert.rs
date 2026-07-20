@@ -472,6 +472,112 @@ pub fn convert_rounded(from: Model, to: Model, input: Color) -> Result<Color, Er
     convert(from, to, input).map(|c| c.round())
 }
 
+/// Convert a batch of colours from one model to another using the fastest
+/// available path (SIMD batched where all hops in the shortest route have
+/// SIMD coverage, falling back to scalar per-pixel otherwise).
+///
+/// Uses the same BFS graph as [`convert`] to find the shortest path, then
+/// chains native SIMD batch functions for routes where all hops are
+/// SIMD-accelerated.  For routes without full SIMD coverage, each pixel is
+/// converted individually via the scalar path.
+///
+/// Currently supports the `lab→cmyk` route as proof-of-concept; more routes
+/// are added as SIMD batch functions become available.
+///
+/// # Errors
+///
+/// Returns [`Error::InvalidInput`] if any input does not match `from`, or if
+/// no conversion path exists between `from` and `to`.
+pub fn convert_batch(from: Model, to: Model, input: &[Color]) -> Result<Vec<Color>, Error> {
+    // Validate all inputs match `from`.
+    for (i, c) in input.iter().enumerate() {
+        let v = model_variant(c);
+        if v != from {
+            return Err(Error::InvalidInput {
+                message: format!("input[{i}] is {v:?} but `from` is {from:?}"),
+            });
+        }
+    }
+
+    // Static singleton (same thread_local as `convert`).
+    thread_local! {
+        static GRAPH: std::cell::RefCell<Graph> = std::cell::RefCell::new(Graph::new());
+    }
+
+    GRAPH.with(|g| {
+        let mut graph = g.borrow_mut();
+        let path = graph
+            .find_path(from, to)
+            .ok_or_else(|| Error::InvalidInput {
+                message: format!("no conversion path from {from:?} to {to:?}"),
+            })?;
+
+        Ok(apply_batch(from, to, &path, input, &graph))
+    })
+}
+
+/// Internal batch-dispatcher: tries SIMD chain for known routes, falls back
+/// to scalar `Graph::apply` per pixel.
+fn apply_batch(
+    from: Model,
+    to: Model,
+    path: &[Model],
+    input: &[Color],
+    graph: &Graph,
+) -> Vec<Color> {
+    match (from, to) {
+        // ── lab → cmyk (lab→xyz→rgb→cmyk) ─────────────────────────────
+        (Model::Lab, Model::Cmyk) => {
+            // Extract raw [f32;3] Lab values from the input.
+            let lab: Vec<[f32; 3]> = input
+                .iter()
+                .map(|c| {
+                    if let Color::Lab([l, a, b]) = c {
+                        [*l as f32, *a as f32, *b as f32]
+                    } else {
+                        // Validated upstream — unreachable.
+                        [0.0_f32; 3]
+                    }
+                })
+                .collect();
+
+            // Hop 1: lab → xyz (SIMD batch)
+            let xyz = crate::simd_lab_xyz::lab_to_xyz_batch(&lab);
+
+            // Hop 2: xyz → rgb (SIMD batch)
+            let rgb = crate::simd_xyz::xyz_to_rgb_batch(&xyz);
+
+            // Boundary: f32[3] on [0,255] → u8[3] for the CMYK batch.
+            let rgb_u8: Vec<[u8; 3]> = rgb
+                .iter()
+                .map(|&[r, g, b]| {
+                    let clamp = |v: f32| -> u8 {
+                        if v <= 0.0 {
+                            0
+                        } else if v >= 255.0 {
+                            255
+                        } else {
+                            (v + 0.5) as u8 // round to nearest
+                        }
+                    };
+                    [clamp(r), clamp(g), clamp(b)]
+                })
+                .collect();
+
+            // Hop 3: rgb → cmyk (SIMD batch)
+            let cmyk = crate::simd_cmyk::rgb_to_cmyk_batch(&rgb_u8);
+
+            // Wrap as Color::Cmyk.
+            cmyk.into_iter()
+                .map(|[c, m, y, k]| Color::Cmyk([c as f64, m as f64, y as f64, k as f64]))
+                .collect()
+        }
+
+        // ── fallback: scalar per-pixel via the routing graph ───────────
+        _ => input.iter().map(|c| graph.apply(path, c.clone())).collect(),
+    }
+}
+
 /// Return the [`Model`] discriminant matching this `Color` variant.
 fn model_variant(c: &Color) -> Model {
     match c {
