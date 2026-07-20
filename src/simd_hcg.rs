@@ -41,14 +41,10 @@
 
 use wide::f32x8;
 
-/// Process a batch of RGB pixels into HCG via mask-blend SIMD.
+/// Public wrapper: auto-selects serial or parallel based on input size.
 ///
-/// Processes 8 pixels at a time using `f32x8` SIMD lanes. All three
-/// candidate hue expressions are computed concurrently and selected
-/// with `blend` using the channel-maximum masks, avoiding per-pixel
-/// branching. The hue `% 6.0` and `% 1.0` (via `fract()`) are applied
-/// after selection. Remainder pixels (final 0–7) fall back to the scalar
-/// [`crate::rgb::hcg`], converting its f64 output to f32.
+/// Delegates to [`crate::simd_parallel::auto_batch`] which chooses serial
+/// SIMD for ≤ 4096 pixels and multi-core rayon for larger batches.
 ///
 /// # Mask-blend strategy
 ///
@@ -72,6 +68,11 @@ use wide::f32x8;
 /// zero where `chroma >= 1.0`. The division is safe because the mask
 /// selects zero (not the inf/NaN result) for lanes where chroma==1.
 pub fn rgb_to_hcg_batch(rgb: &[[u8; 3]]) -> Vec<[f32; 3]> {
+    crate::simd_parallel::auto_batch(rgb, rgb_to_hcg_batch_serial)
+}
+
+/// Serial single-core SIMD implementation — processes 8 pixels at a time.
+pub(crate) fn rgb_to_hcg_batch_serial(rgb: &[[u8; 3]]) -> Vec<[f32; 3]> {
     let n = rgb.len();
     let mut result = Vec::with_capacity(n);
     let mut i = 0;
@@ -197,15 +198,7 @@ pub fn rgb_to_hcg_batch(rgb: &[[u8; 3]]) -> Vec<[f32; 3]> {
     result
 }
 
-/// Process a batch of HCG triples into raw RGB floats (0–255) via
-/// mask-blend SIMD.
-///
-/// Processes 8 pixels at a time using `f32x8` SIMD lanes. All six
-/// hue-slice candidate triples are computed concurrently per pixel and
-/// selected with `blend`, avoiding per-pixel branching. The achromatic
-/// case (`chroma == 0`) forces r=g=b = gray×255 via mask-blend.
-/// Remainder pixels (final 0–7) fall back to the scalar [`crate::hcg::rgb`],
-/// converting its f64 output to f32.
+/// Public wrapper: auto-selects serial or parallel based on input size.
 ///
 /// # Achromatic guard
 ///
@@ -214,6 +207,11 @@ pub fn rgb_to_hcg_batch(rgb: &[[u8; 3]]) -> Vec<[f32; 3]> {
 /// path applies this via a mask-blend on the `c == 0` condition,
 /// overriding the 6-way piecewise results.
 pub fn hcg_to_rgb_batch(hcg: &[[f32; 3]]) -> Vec<[f32; 3]> {
+    crate::simd_parallel::auto_batch(hcg, hcg_to_rgb_batch_serial)
+}
+
+/// Serial single-core SIMD implementation — processes 8 pixels at a time.
+pub(crate) fn hcg_to_rgb_batch_serial(hcg: &[[f32; 3]]) -> Vec<[f32; 3]> {
     let n = hcg.len();
     let mut result = Vec::with_capacity(n);
     let mut i = 0;

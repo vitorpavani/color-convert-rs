@@ -23,13 +23,10 @@
 
 use wide::f32x8;
 
-/// Process a batch of HSV triples into raw RGB floats (0–255) via
-/// mask-blend SIMD.
+/// Public wrapper: auto-selects serial or parallel based on input size.
 ///
-/// Processes 8 pixels at a time using `f32x8` SIMD lanes. All six hue-sector
-/// candidate (r,g,b) triples are computed concurrently and selected with
-/// `blend`, avoiding per-pixel branching. Remainder pixels (final 0–7) fall
-/// back to the scalar [`crate::hsv::rgb`], converting its f64 output to f32.
+/// Delegates to [`crate::simd_parallel::auto_batch`] which chooses serial
+/// SIMD for ≤ 4096 pixels and multi-core rayon for larger batches.
 ///
 /// # Mask-blend strategy
 ///
@@ -45,6 +42,11 @@ use wide::f32x8;
 /// The hue wrap (h=360 → h/60=6 → hi=0, f=0) is handled by
 /// `hi_raw.rem_euclid(6)` and computing f from hi_raw before wrapping.
 pub fn hsv_to_rgb_batch(hsv: &[[f32; 3]]) -> Vec<[f32; 3]> {
+    crate::simd_parallel::auto_batch(hsv, hsv_to_rgb_batch_serial)
+}
+
+/// Serial single-core SIMD implementation — processes 8 pixels at a time.
+pub(crate) fn hsv_to_rgb_batch_serial(hsv: &[[f32; 3]]) -> Vec<[f32; 3]> {
     let n = hsv.len();
     let mut result = Vec::with_capacity(n);
     let mut i = 0;

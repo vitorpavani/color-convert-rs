@@ -35,18 +35,25 @@ fn srgb_fwd_f32x8(c: wide::f32x8) -> wide::f32x8 {
     mask.blend(pow_branch, linear_branch)
 }
 
-/// Process a batch of Oklab pixels into raw RGB floats via inverse Oklab
-/// matrix → cube → inverse LMS matrix → forward sRGB gamma → ×255.
+/// Public wrapper: auto-selects serial or parallel based on input size.
 ///
-/// Processes 8 pixels at a time using `f32x8` SIMD lanes. Remainder
-/// pixels (final 0–7) fall back to the scalar [`crate::oklab::rgb`],
-/// converting its f64 output to f32.
+/// Delegates to [`crate::simd_parallel::auto_batch`] which chooses serial
+/// SIMD for ≤ 4096 pixels and multi-core rayon for larger batches.
 ///
 /// ## Output
 ///
 /// Returns raw `[f32;3]` floats on [0, 255] — the same shape as the
 /// scalar `oklab::rgb` which also returns unrounded floats.
 pub fn oklab_to_rgb_batch(oklab: &[[f32; 3]]) -> Vec<[f32; 3]> {
+    crate::simd_parallel::auto_batch(oklab, oklab_to_rgb_batch_serial)
+}
+
+/// Serial single-core SIMD implementation — processes 8 pixels at a time.
+///
+/// Processes 8 pixels at a time using f32x8 SIMD lanes. Remainder
+/// pixels (final 0–7) fall back to the scalar [`crate::oklab::rgb`],
+/// converting its f64 output to f32.
+pub(crate) fn oklab_to_rgb_batch_serial(oklab: &[[f32; 3]]) -> Vec<[f32; 3]> {
     use wide::f32x8;
 
     let n = oklab.len();

@@ -162,7 +162,16 @@ fn lab_transfer_f32x8(t: wide::f32x8) -> wide::f32x8 {
 /// sRGB inverse nonlinear transform (vectorized via mask-blend) and the
 /// sRGB→XYZ matrix multiply. Remainder pixels (final 0–7) fall back to
 /// the scalar [`crate::rgb::xyz`], converting its f64 output to f32.
+/// Public wrapper: auto-selects serial or parallel based on input size.
+///
+/// Delegates to [`crate::simd_parallel::auto_batch`] which chooses serial
+/// SIMD for ≤ 4096 pixels and multi-core rayon for larger batches.
 pub fn rgb_to_xyz_batch(rgb: &[[u8; 3]]) -> Vec<[f32; 3]> {
+    crate::simd_parallel::auto_batch(rgb, rgb_to_xyz_batch_serial)
+}
+
+/// Serial single-core SIMD implementation — processes 8 pixels at a time.
+pub(crate) fn rgb_to_xyz_batch_serial(rgb: &[[u8; 3]]) -> Vec<[f32; 3]> {
     use wide::f32x8;
 
     let n = rgb.len();
@@ -244,7 +253,13 @@ pub fn rgb_to_xyz_batch(rgb: &[[u8; 3]]) -> Vec<[f32; 3]> {
 /// combination (L, a, b formulas) AND the CIE LAB piecewise transfer
 /// (vectorized via mask-blend with `f32x8::cbrt`). Remainder pixels fall
 /// back to the scalar [`crate::xyz::lab`], converting its f64 output to f32.
+/// Public wrapper: auto-selects serial or parallel based on input size.
 pub fn xyz_to_lab_batch(xyz: &[[f32; 3]]) -> Vec<[f32; 3]> {
+    crate::simd_parallel::auto_batch(xyz, xyz_to_lab_batch_serial)
+}
+
+/// Serial single-core SIMD implementation — processes 8 pixels at a time.
+pub(crate) fn xyz_to_lab_batch_serial(xyz: &[[f32; 3]]) -> Vec<[f32; 3]> {
     use wide::f32x8;
 
     let n = xyz.len();
@@ -332,7 +347,13 @@ pub fn xyz_to_lab_batch(xyz: &[[f32; 3]]) -> Vec<[f32; 3]> {
 /// normalization, and CIE L*a*b* transfer into one pipeline per block of
 /// 8 pixels via `f32x8`.  Remainder pixels fall back to the same
 /// f64-scalar chain used by the two-step path for bit-identical output.
+/// Public wrapper: auto-selects serial or parallel based on input size.
 pub fn rgb_to_lab_batch(rgb: &[[u8; 3]]) -> Vec<[f32; 3]> {
+    crate::simd_parallel::auto_batch(rgb, rgb_to_lab_batch_serial)
+}
+
+/// Serial single-core SIMD implementation — processes 8 pixels at a time.
+pub(crate) fn rgb_to_lab_batch_serial(rgb: &[[u8; 3]]) -> Vec<[f32; 3]> {
     use wide::f32x8;
 
     let n = rgb.len();

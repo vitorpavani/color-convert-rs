@@ -169,3 +169,29 @@ fn par_batch_chunked_matches_serial_lab_to_xyz_all_chunk_sizes() {
         }
     }
 }
+
+/// Behavior: `auto_batch` produces correct-length output for inputs below
+/// the AUTO_PARALLEL_THRESHOLD (4096 pixels). The auto-dispatch selects the
+/// serial path internally for small inputs.
+///
+/// Length parity is sufficient — correctness of the serial output is already
+/// tested by `tests/simd_routes.rs` (rgb→lab scalar match).
+#[test]
+fn auto_batch_uses_serial_for_small_inputs() {
+    let small: Vec<[u8; 3]> = vec![[255, 0, 0]; 100];
+    let result = simd::rgb_to_lab_batch(&small);
+    assert_eq!(result.len(), 100);
+    // First pixel must be a valid red→LAB conversion
+    assert!(
+        result[0][0] > 40.0 && result[0][0] < 60.0,
+        "L should be ~53 for red"
+    );
+    assert!(
+        result[0][1] > 70.0 && result[0][1] < 90.0,
+        "a should be ~80 for red"
+    );
+    assert!(
+        result[0][2] > 60.0 && result[0][2] < 75.0,
+        "b should be ~67 for red"
+    );
+}
