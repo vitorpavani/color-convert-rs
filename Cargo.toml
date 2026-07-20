@@ -12,6 +12,9 @@ name = "bench"
 [[bin]]
 name = "bench_gpu"
 
+[[bin]]
+name = "bench_simd_parallel"
+
 [dependencies]
 # Derive-based library error enum: library code returns Result<_, Error> with
 # no unwrap()/expect() in lib paths (Rule 9: issue #4).
@@ -38,6 +41,11 @@ pollster = "0.4"
 # configuration. (Rule 9: issue #22 — CubeCL GPU kernel for batch color
 # conversion)
 cubecl = { version = "0.10", features = ["wgpu"] }
+
+# Multi-core parallelism for SIMD batch routes via work-stealing thread pool.
+# Each core runs 8-wide f32x8 SIMD on a chunk; rayon spreads chunks across
+# cores with order-stable par_chunks. (Rule 9: issue #110)
+rayon = "1"
 
 # Tiny, zero-copy typed-casting library for reinterpreting byte slices as
 # typed f32/u8 slices without unsafe transmutes. Required by CubeCL's
