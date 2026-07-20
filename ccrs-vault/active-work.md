@@ -13,18 +13,25 @@ publish-readiness, npm package, and image processing positioning.
 
 ---
 
-## ✅ Project Status: Published
+## ✅ Project Status: v0.2.0 Published
 
 All 17 color models ported. 16 SIMD batch routes (f32x8). Multi-core parallelism (rayon).
 GPU kernels (CubeCL). sRGB LUT + fast cbrt. 10-wave optimization drive complete.
 
 **Published:**
-- npm: [`color-convert-rs`](https://www.npmjs.com/package/color-convert-rs) — 272/272 routes
-  match color-convert@3.1.3, batch SIMD 2–8× faster than JS loops
-- crates.io: pending (see below)
+- crates.io: [`color-convert-rs v0.2.0`](https://crates.io/crates/color-convert-rs)
+- npm: [`color-convert-rs`](https://www.npmjs.com/package/color-convert-rs) — napi-rs + auto-tier
+- 272/272 routes match color-convert@3.1.3
 
-**Headline:** rgb→lab **111.3 MP/s** single-core (10.3×), **164.0 MP/s** multi-core (15.2×).
-Full HD frame (1920×1080) in <30ms across all routes. See [[01-optimization-journey]].
+**v0.2.0 highlights:**
+- napi-rs replaces wasm (rayon + GPU access from Node.js)
+- Pure JS fast-path for single-color (at parity with color-convert)
+- Auto-tier: detects Uint8Array → batch SIMD, numbers → JS
+- Stride-aware batch API + `image` crate integration
+- Batch 10-15× faster, single-color at parity
+
+**Headline:** rgb→lab **111.3 MP/s** Rust single-core, **103-117M ops/s** napi batch,
+**9.0M ops/s** JS single-color (at parity with color-convert).
 
 ## What shipped this session
 
