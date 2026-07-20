@@ -219,22 +219,22 @@ fn hcg_to_rgb_batch_achromatic_and_edge_cases() {
     // primaries (c=100, g=0 at hue=0,120,240,...), and edge cases.
     let test_hcg: Vec<[f32; 3]> = vec![
         // Achromatic (chroma=0, pure gray at various levels)
-        [0.0, 0.0, 0.0],    // black
-        [0.0, 0.0, 50.0],   // mid-gray
-        [0.0, 0.0, 100.0],  // white
+        [0.0, 0.0, 0.0],   // black
+        [0.0, 0.0, 50.0],  // mid-gray
+        [0.0, 0.0, 100.0], // white
         // Primary colours (c=100, g=0)
-        [0.0, 100.0, 0.0],    // red    → h=0
-        [120.0, 100.0, 0.0],  // green  → h=120
-        [240.0, 100.0, 0.0],  // blue   → h=240
+        [0.0, 100.0, 0.0],   // red    → h=0
+        [120.0, 100.0, 0.0], // green  → h=120
+        [240.0, 100.0, 0.0], // blue   → h=240
         // Secondary colours
-        [60.0, 100.0, 0.0],   // yellow
-        [180.0, 100.0, 0.0],  // cyan
-        [300.0, 100.0, 0.0],  // magenta
+        [60.0, 100.0, 0.0],  // yellow
+        [180.0, 100.0, 0.0], // cyan
+        [300.0, 100.0, 0.0], // magenta
         // Mixed (chroma + gray)
-        [0.0, 50.0, 50.0],    // red tinted gray
-        [120.0, 80.0, 10.0],  // green with some gray
+        [0.0, 50.0, 50.0],   // red tinted gray
+        [120.0, 80.0, 10.0], // green with some gray
         // Near-zero chroma (exercises chroma<1e-10 grayscale guard)
-        [42.0, 0.0, 75.0],    // c=0, pure gray
+        [42.0, 0.0, 75.0], // c=0, pure gray
     ];
 
     let scalar_rgb: Vec<[f64; 3]> = test_hcg
@@ -269,7 +269,9 @@ fn hcg_to_rgb_batch_achromatic_and_edge_cases() {
             assert!(
                 diff <= RGB_TOLERANCE,
                 "pixel {i} hcg=[{},{},{}] chan {chan_name}({chan}): simd(f32)={} scalar(f64)={} diff={:.2e} > tol={:.2e}",
-                test_hcg[i][0], test_hcg[i][1], test_hcg[i][2],
+                test_hcg[i][0],
+                test_hcg[i][1],
+                test_hcg[i][2],
                 simd_val[chan],
                 scalar_val[chan],
                 diff,
