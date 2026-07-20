@@ -482,10 +482,6 @@ pub fn rgb_to_lab_gpu_batch_double_buffered(
     }
 
     // ── Phase 2: read back all chunks ───────────────────────────────
-    // Now that all uploads + launches are queued, read back each chunk.
-    // The first read_one blocks until that chunk's compute is done;
-    // subsequent reads should return immediately since earlier chunks
-    // already completed while we were uploading later chunks.
     let mut result: Vec<[f32; 3]> = Vec::with_capacity(n);
     for (out_handle, chunk_n) in out_handles {
         let bytes = match client.read_one(out_handle) {
@@ -500,4 +496,116 @@ pub fn rgb_to_lab_gpu_batch_double_buffered(
     }
 
     Some(result)
+}
+
+/// Phase timing breakdown for the double-buffered GPU pipeline.
+#[derive(Debug, Clone, Copy)]
+pub struct GpuDoubleBufferTimings {
+    /// Host→device upload time for all chunks combined
+    pub upload_ms: f64,
+    /// Total kernel launch time for all chunks combined
+    pub compute_ms: f64,
+    /// Device→host readback time for all chunks combined
+    pub readback_ms: f64,
+    /// Number of chunks used
+    pub k_chunks: u32,
+}
+
+/// Like [`rgb_to_lab_gpu_batch_double_buffered`] but returns per-phase timings.
+pub fn rgb_to_lab_gpu_batch_double_buffered_timed(
+    rgb: &[[u8; 3]],
+    k_chunks: u32,
+) -> Option<(Vec<[f32; 3]>, GpuDoubleBufferTimings)> {
+    let n = rgb.len();
+    if n == 0 {
+        return Some((
+            Vec::new(),
+            GpuDoubleBufferTimings {
+                upload_ms: 0.0,
+                compute_ms: 0.0,
+                readback_ms: 0.0,
+                k_chunks,
+            },
+        ));
+    }
+
+    if crate::probe::probe() != crate::probe::Backend::Gpu {
+        return None;
+    }
+
+    let client =
+        std::panic::catch_unwind(|| WgpuRuntime::client(&WgpuDevice::DefaultDevice)).ok()?;
+
+    let chunk_size = n.div_ceil(k_chunks as usize);
+
+    let upload_start = Instant::now();
+    let mut compute_total: f64 = 0.0;
+
+    let mut out_handles: Vec<(cubecl::server::Handle, usize)> =
+        Vec::with_capacity(k_chunks as usize);
+
+    for chunk_idx in 0..k_chunks as usize {
+        let start = chunk_idx * chunk_size;
+        let end = usize::min(start + chunk_size, n);
+        let chunk_n = end - start;
+        if chunk_n == 0 {
+            continue;
+        }
+
+        let n_float = chunk_n * 3;
+        let mut flat_input: Vec<f32> = Vec::with_capacity(n_float);
+        for pixel in &rgb[start..end] {
+            flat_input.push(f32::from(pixel[0]));
+            flat_input.push(f32::from(pixel[1]));
+            flat_input.push(f32::from(pixel[2]));
+        }
+
+        let in_handle = client.create_from_slice(bytemuck::cast_slice(&flat_input));
+        let out_handle = client.empty(n_float * size_of::<f32>());
+
+        let (cube_count, cube_dim) = compute_launch_grid(chunk_n);
+
+        let compute_start = Instant::now();
+        // SAFETY: Buffer lengths match n_float, cube_count covers all pixels.
+        unsafe {
+            rgb_to_lab_kernel::launch(
+                &client,
+                cube_count,
+                cube_dim,
+                ArrayArg::from_raw_parts(in_handle.clone(), n_float),
+                ArrayArg::from_raw_parts(out_handle.clone(), n_float),
+                chunk_n,
+            );
+        }
+        compute_total += compute_start.elapsed().as_secs_f64() * 1000.0;
+
+        out_handles.push((out_handle, chunk_n));
+    }
+
+    let upload_ms = upload_start.elapsed().as_secs_f64() * 1000.0;
+
+    let readback_start = Instant::now();
+    let mut result: Vec<[f32; 3]> = Vec::with_capacity(n);
+    for (out_handle, chunk_n) in out_handles {
+        let bytes = match client.read_one(out_handle) {
+            Ok(b) => b,
+            Err(_) => return None,
+        };
+        let result_f32: &[f32] = bytemuck::cast_slice(&bytes);
+        for i in 0..chunk_n {
+            let base = i * 3;
+            result.push([result_f32[base], result_f32[base + 1], result_f32[base + 2]]);
+        }
+    }
+    let readback_ms = readback_start.elapsed().as_secs_f64() * 1000.0;
+
+    Some((
+        result,
+        GpuDoubleBufferTimings {
+            upload_ms,
+            compute_ms: compute_total,
+            readback_ms,
+            k_chunks,
+        },
+    ))
 }

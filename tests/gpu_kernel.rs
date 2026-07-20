@@ -117,10 +117,9 @@ fn gpu_kernel_matches_cpu_lab_within_tolerance() {
                     cpu_lab[2],
                     (lab_gpu[2] - cpu_lab[2]).abs()
                 );
+            }
         }
     }
-}
-
 }
 
 /// RED: The double-buffered (chunked upload-compute pipeline) GPU function
@@ -176,10 +175,14 @@ fn double_buffered_matches_serial_gpu_output() {
             // Green-by-skip.
         }
         (None, Some(_)) => {
-            panic!("serial returned None but double_buffered returned Some — inconsistent GPU probe");
+            panic!(
+                "serial returned None but double_buffered returned Some — inconsistent GPU probe"
+            );
         }
         (Some(_), None) => {
-            panic!("serial returned Some but double_buffered returned None — inconsistent GPU probe");
+            panic!(
+                "serial returned Some but double_buffered returned None — inconsistent GPU probe"
+            );
         }
         (Some(serial_lab), Some(db_lab)) => {
             assert_eq!(
