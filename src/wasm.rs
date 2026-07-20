@@ -62,10 +62,7 @@ macro_rules! batch_rgb_export {
     ($fn_name:ident, $simd_fn:path, $out_chans:expr) => {
         #[wasm_bindgen]
         pub fn $fn_name(input: &[u8]) -> Vec<f32> {
-            let pixels: Vec<[u8; 3]> = input
-                .chunks_exact(3)
-                .map(|c| [c[0], c[1], c[2]])
-                .collect();
+            let pixels: Vec<[u8; 3]> = input.chunks_exact(3).map(|c| [c[0], c[1], c[2]]).collect();
             let result = $simd_fn(&pixels);
             let mut flat = Vec::with_capacity(result.len() * $out_chans);
             for px in &result {
@@ -82,10 +79,8 @@ macro_rules! batch_f32_export {
     ($fn_name:ident, $simd_fn:path, $out_chans:expr) => {
         #[wasm_bindgen]
         pub fn $fn_name(input: &[f32]) -> Vec<f32> {
-            let input_arr: Vec<[f32; 3]> = input
-                .chunks_exact(3)
-                .map(|c| [c[0], c[1], c[2]])
-                .collect();
+            let input_arr: Vec<[f32; 3]> =
+                input.chunks_exact(3).map(|c| [c[0], c[1], c[2]]).collect();
             let result = $simd_fn(&input_arr);
             let mut flat = Vec::with_capacity(result.len() * $out_chans);
             for px in &result {

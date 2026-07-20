@@ -32,6 +32,7 @@
 pub mod ansi16;
 pub mod ansi256;
 pub mod apple;
+pub mod batch;
 pub mod cmyk;
 mod color_name;
 pub mod convert;

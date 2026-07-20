@@ -34,6 +34,8 @@ gpu = ["dep:wgpu", "dep:pollster", "dep:cubecl", "dep:bytemuck"]
 # wasm-bindgen exports for building an npm drop-in replacement for color-convert
 # via `wasm-pack build --target nodejs`. See `src/wasm.rs` and `js/`.
 wasm = ["dep:wasm-bindgen", "dep:js-sys"]
+# Integration with the `image` crate — provides `batch::image::to_lab()` etc.
+image = ["dep:image"]
 
 [lib]
 name = "color_convert_rs"
@@ -114,6 +116,9 @@ bytemuck = { version = "1", optional = true }
 # Used by `src/wasm.rs` + `js/` to expose the `convert.rgb.hsl(...)` API.
 wasm-bindgen = { version = "0.2", optional = true }
 js-sys = { version = "0.3", optional = true }
+
+# --- image crate integration (optional, behind the `image` feature) ---
+image = { version = "0.25", optional = true, default-features = false, features = ["jpeg", "png"] }
 
 [profile.release]
 lto = true
