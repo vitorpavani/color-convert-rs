@@ -23,6 +23,9 @@ exclude = [
     "/js",
     "/pkg",
     "/run-bench-gpu.sh",
+    "/.envrc",
+    "/flake.nix",
+    "/flake.lock",
 ]
 
 [features]
