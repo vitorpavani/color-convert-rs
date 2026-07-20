@@ -121,6 +121,8 @@ fn gpu_kernel_matches_cpu_lab_within_tolerance() {
     }
 }
 
+}
+
 /// RED: The double-buffered (chunked upload-compute pipeline) GPU function
 /// `rgb_to_lab_gpu_batch_double_buffered` must exist and, when a GPU is available,
 /// produce output that matches the serial `rgb_to_lab_gpu_batch` output exactly.
@@ -202,5 +204,4 @@ fn double_buffered_matches_serial_gpu_output() {
             }
         }
     }
-}
 }

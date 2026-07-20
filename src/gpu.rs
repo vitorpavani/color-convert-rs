@@ -396,3 +396,108 @@ pub fn rgb_to_lab_gpu_batch_timed(rgb: &[[u8; 3]]) -> Option<(Vec<[f32; 3]>, Gpu
         },
     ))
 }
+
+// ── Double-buffered (chunked pipeline) host-side harness ─────────────────
+
+/// Converts a batch of `[u8; 3]` RGB pixels to CIELAB `[f32; 3]` using
+/// the CubeCL/wgpu GPU kernel, split into `k_chunks` to pipeline uploads
+/// with compute.
+///
+/// # How it works
+///
+/// Instead of uploading the entire input, launching once, and reading back
+/// (the serial path in [`rgb_to_lab_gpu_batch`]), this function:
+///
+/// 1. Splits the input into `k_chunks` evenly-sized slices.
+/// 2. For each chunk, creates GPU buffers and launches the kernel —
+///    submitting ALL uploads + dispatches to the GPU command queue
+///    **before** any blocking readback.
+/// 3. Then reads back all output buffers in a second pass.
+///
+/// This lets the GPU driver pipeline DMA transfers with kernel execution:
+/// while chunk N computes, the DMA engine can be uploading chunk N+1.
+///
+/// # Return value
+///
+/// - `None` when no GPU is available.
+/// - `Some(Vec<[f32; 3]>)` when the kernel completed.
+pub fn rgb_to_lab_gpu_batch_double_buffered(
+    rgb: &[[u8; 3]],
+    k_chunks: u32,
+) -> Option<Vec<[f32; 3]>> {
+    let n = rgb.len();
+    if n == 0 {
+        return Some(Vec::new());
+    }
+
+    if crate::probe::probe() != crate::probe::Backend::Gpu {
+        return None;
+    }
+
+    let client =
+        std::panic::catch_unwind(|| WgpuRuntime::client(&WgpuDevice::DefaultDevice)).ok()?;
+
+    let chunk_size = n.div_ceil(k_chunks as usize);
+
+    // ── Phase 1: upload all chunks + launch all kernels ──────────────
+    // Store output handles to read back later.
+    let mut out_handles: Vec<(cubecl::server::Handle, usize)> =
+        Vec::with_capacity(k_chunks as usize);
+
+    for chunk_idx in 0..k_chunks as usize {
+        let start = chunk_idx * chunk_size;
+        let end = usize::min(start + chunk_size, n);
+        let chunk_n = end - start;
+        if chunk_n == 0 {
+            continue;
+        }
+
+        let n_float = chunk_n * 3;
+        let mut flat_input: Vec<f32> = Vec::with_capacity(n_float);
+        for pixel in &rgb[start..end] {
+            flat_input.push(f32::from(pixel[0]));
+            flat_input.push(f32::from(pixel[1]));
+            flat_input.push(f32::from(pixel[2]));
+        }
+
+        let in_handle = client.create_from_slice(bytemuck::cast_slice(&flat_input));
+        let out_handle = client.empty(n_float * size_of::<f32>());
+
+        let (cube_count, cube_dim) = compute_launch_grid(chunk_n);
+
+        // SAFETY: Same invariants as rgb_to_lab_gpu_batch — buffer lengths
+        // match n_float, cube_count covers all chunk_n pixels.
+        unsafe {
+            rgb_to_lab_kernel::launch(
+                &client,
+                cube_count,
+                cube_dim,
+                ArrayArg::from_raw_parts(in_handle.clone(), n_float),
+                ArrayArg::from_raw_parts(out_handle.clone(), n_float),
+                chunk_n,
+            );
+        }
+
+        out_handles.push((out_handle, chunk_n));
+    }
+
+    // ── Phase 2: read back all chunks ───────────────────────────────
+    // Now that all uploads + launches are queued, read back each chunk.
+    // The first read_one blocks until that chunk's compute is done;
+    // subsequent reads should return immediately since earlier chunks
+    // already completed while we were uploading later chunks.
+    let mut result: Vec<[f32; 3]> = Vec::with_capacity(n);
+    for (out_handle, chunk_n) in out_handles {
+        let bytes = match client.read_one(out_handle) {
+            Ok(b) => b,
+            Err(_) => return None,
+        };
+        let result_f32: &[f32] = bytemuck::cast_slice(&bytes);
+        for i in 0..chunk_n {
+            let base = i * 3;
+            result.push([result_f32[base], result_f32[base + 1], result_f32[base + 2]]);
+        }
+    }
+
+    Some(result)
+}
