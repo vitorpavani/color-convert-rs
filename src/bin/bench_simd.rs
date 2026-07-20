@@ -16,6 +16,7 @@ use std::io::Write;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use color_convert_rs::hsl;
+use color_convert_rs::hsv;
 use color_convert_rs::lab;
 use color_convert_rs::oklab;
 use color_convert_rs::rgb;
@@ -25,6 +26,7 @@ use color_convert_rs::simd_cmyk;
 use color_convert_rs::simd_hcg;
 use color_convert_rs::simd_hsl;
 use color_convert_rs::simd_hsv;
+use color_convert_rs::simd_hsv_rgb;
 use color_convert_rs::simd_hwb;
 use color_convert_rs::simd_lab_xyz;
 use color_convert_rs::simd_oklab;
@@ -307,6 +309,18 @@ fn rgb_to_hsv_scalar_batch(pixels: &[[u8; 3]]) -> Vec<[f64; 3]> {
 
 fn rgb_to_hsv_simd(pixels: &[[u8; 3]]) -> Vec<[f32; 3]> {
     simd_hsv::rgb_to_hsv_batch(pixels)
+}
+
+// ── HSV inverse routes (hsv→rgb) ──────────────────────────────────────
+fn hsv_to_rgb_scalar_batch(hsv_inputs: &[[f32; 3]]) -> Vec<[f64; 3]> {
+    hsv_inputs
+        .iter()
+        .map(|&h| hsv::rgb([h[0] as f64, h[1] as f64, h[2] as f64]))
+        .collect()
+}
+
+fn hsv_to_rgb_simd(hsv_inputs: &[[f32; 3]]) -> Vec<[f32; 3]> {
+    simd_hsv_rgb::hsv_to_rgb_batch(hsv_inputs)
 }
 
 // ── Oklab routes ──────────────────────────────────────────────────────
@@ -1141,5 +1155,77 @@ fn main() {
         oklab_rgb_decision
     );
 
-    println!("\nAppended 26 records to {}", RESULTS_PATH);
+    // ── HSV→RGB routes (inverse route: hsv input) ─────────────────────
+    // Pre-convert RGB→hsv once (NOT timed) so we measure only hsv→rgb.
+    let hsv_inputs: Vec<[f32; 3]> = simd_hsv::rgb_to_hsv_batch(&pixels);
+
+    // hsv->rgb (scalar batch baseline via f64 hsv::rgb, materialized Vec)
+    let mut hsv_rgb_scalar_ms: f64 = f64::MAX;
+    for _ in 0..warmup_iters {
+        black_box(hsv_to_rgb_scalar_batch(&hsv_inputs));
+    }
+    for _ in 0..timed_iters {
+        let start = Instant::now();
+        black_box(hsv_to_rgb_scalar_batch(&hsv_inputs));
+        hsv_rgb_scalar_ms = hsv_rgb_scalar_ms.min(start.elapsed().as_secs_f64() * 1e3);
+    }
+    let hsv_rgb_scalar_mps = (n as f64 / 1e6) / (hsv_rgb_scalar_ms / 1000.0);
+    append_record(
+        &ctx,
+        RecordParams {
+            route: "hsv->rgb",
+            best_ms: hsv_rgb_scalar_ms,
+            n,
+            iters: timed_iters,
+            warmup: warmup_iters,
+            decision: "baseline",
+            notes: &format!(
+                "Rust scalar batch baseline (pre-SIMD, f64 hsv::rgb), N={}",
+                format_number(n)
+            ),
+            baseline_ref: None,
+        },
+    );
+    println!(
+        "{:<18}  N={:>8}  best={:>9.3} ms  {:>10.1} MP/s  [scalar]",
+        "hsv->rgb (scalar)", n, hsv_rgb_scalar_ms, hsv_rgb_scalar_mps
+    );
+
+    // hsv->rgb (SIMD batch via 6-way hue-sector mask-blend)
+    let mut hsv_rgb_simd_ms: f64 = f64::MAX;
+    for _ in 0..warmup_iters {
+        black_box(hsv_to_rgb_simd(&hsv_inputs));
+    }
+    for _ in 0..timed_iters {
+        let start = Instant::now();
+        black_box(hsv_to_rgb_simd(&hsv_inputs));
+        hsv_rgb_simd_ms = hsv_rgb_simd_ms.min(start.elapsed().as_secs_f64() * 1e3);
+    }
+    let hsv_rgb_simd_mps = (n as f64 / 1e6) / (hsv_rgb_simd_ms / 1000.0);
+    let hsv_rgb_kept = hsv_rgb_simd_mps > hsv_rgb_scalar_mps;
+    let hsv_rgb_decision = if hsv_rgb_kept { "kept" } else { "reverted" };
+    let hsv_rgb_speedup = hsv_rgb_simd_mps / hsv_rgb_scalar_mps;
+    append_record(
+        &ctx,
+        RecordParams {
+            route: "hsv->rgb",
+            best_ms: hsv_rgb_simd_ms,
+            n,
+            iters: timed_iters,
+            warmup: warmup_iters,
+            decision: hsv_rgb_decision,
+            notes: &format!(
+                "wide::f32x8 SIMD batch (6-way hue-sector mask-blend), N={}, speedup={:.2}x, tol=1e-3",
+                format_number(n),
+                hsv_rgb_speedup
+            ),
+            baseline_ref: Some(&ctx.commit),
+        },
+    );
+    println!(
+        "{:<18}  N={:>8}  best={:>9.3} ms  {:>10.1} MP/s  [SIMD]  speedup={:.2}x  decision={}",
+        "hsv->rgb (SIMD)", n, hsv_rgb_simd_ms, hsv_rgb_simd_mps, hsv_rgb_speedup, hsv_rgb_decision
+    );
+
+    println!("\nAppended 28 records to {}", RESULTS_PATH);
 }
