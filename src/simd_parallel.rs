@@ -42,8 +42,26 @@ use rayon::prelude::*;
 /// vs the SIMD work, small enough for load balancing (N=50M → ~763 chunks → ~27/core on 28 cores).
 pub const PARALLEL_CHUNK: usize = 65_536;
 
-/// Run a serial `_batch` fn across cores. Each chunk is processed by `f`
-/// (which itself does 8-wide f32x8 SIMD on one core); rayon spreads chunks across cores.
+/// Run a serial `_batch` fn across cores with a configurable chunk size.
+///
+/// Unlike [`par_batch`] this lets callers override the default [`PARALLEL_CHUNK`]
+/// for per-route tuning (e.g. memory-bandwidth-bound routes may benefit from
+/// larger chunks that reduce per-chunk scheduling overhead).
+/// Each chunk is processed by `f` (which itself does 8-wide f32x8 SIMD on one
+/// core); rayon spreads chunks across cores.  Order is preserved.
+pub fn par_batch_chunked<I, O, F>(input: &[I], chunk_size: usize, f: F) -> Vec<O>
+where
+    I: Sync,
+    O: Send,
+    F: Fn(&[I]) -> Vec<O> + Send + Sync,
+{
+    input.par_chunks(chunk_size).flat_map(f).collect()
+}
+
+/// Run a serial `_batch` fn across cores using the default [`PARALLEL_CHUNK`].
+///
+/// Each chunk is processed by `f` (which itself does 8-wide f32x8 SIMD on one
+/// core); rayon spreads chunks across cores.
 /// Order is preserved (par_chunks is order-stable; flat_map concatenates in chunk order).
 pub fn par_batch<I, O, F>(input: &[I], f: F) -> Vec<O>
 where
@@ -51,5 +69,5 @@ where
     O: Send,
     F: Fn(&[I]) -> Vec<O> + Send + Sync,
 {
-    input.par_chunks(PARALLEL_CHUNK).flat_map(f).collect()
+    par_batch_chunked(input, PARALLEL_CHUNK, f)
 }

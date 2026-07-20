@@ -11,8 +11,8 @@
 //! over CHUNK, and N with a partial-SIMD-tile remainder).
 
 use color_convert_rs::{
-    simd, simd_apple, simd_cmyk, simd_hsl, simd_lab_xyz, simd_oklab, simd_oklab_rgb,
-    simd_parallel, simd_xyz,
+    simd, simd_apple, simd_cmyk, simd_hsl, simd_lab_xyz, simd_oklab, simd_oklab_rgb, simd_parallel,
+    simd_xyz,
 };
 
 /// Deterministic RGB pixel generator (mulberry32, seed=42) — matches the harness.
@@ -121,7 +121,8 @@ fn par_batch_chunked_matches_serial_rgb_to_cmyk_all_chunk_sizes() {
         for &n in &CHUNK_BOUNDARY_NS {
             let pixels = generate_rgb_pixels(n);
             let serial = simd_cmyk::rgb_to_cmyk_batch(&pixels);
-            let parallel = simd_parallel::par_batch_chunked(&pixels, chunk, simd_cmyk::rgb_to_cmyk_batch);
+            let parallel =
+                simd_parallel::par_batch_chunked(&pixels, chunk, simd_cmyk::rgb_to_cmyk_batch);
             assert_eq!(
                 serial, parallel,
                 "rgb->cmyk differs at n={n}, chunk={chunk}"
@@ -137,7 +138,8 @@ fn par_batch_chunked_matches_serial_rgb_to_apple_all_chunk_sizes() {
         for &n in &CHUNK_BOUNDARY_NS {
             let pixels = generate_rgb_pixels(n);
             let serial = simd_apple::rgb_to_apple_batch(&pixels);
-            let parallel = simd_parallel::par_batch_chunked(&pixels, chunk, simd_apple::rgb_to_apple_batch);
+            let parallel =
+                simd_parallel::par_batch_chunked(&pixels, chunk, simd_apple::rgb_to_apple_batch);
             assert_eq!(
                 serial, parallel,
                 "rgb->apple differs at n={n}, chunk={chunk}"
@@ -158,11 +160,12 @@ fn par_batch_chunked_matches_serial_lab_to_xyz_all_chunk_sizes() {
                 simd::xyz_to_lab_batch(&xyz_tmp)
             };
             let serial = simd_lab_xyz::lab_to_xyz_batch(&lab_inputs);
-            let parallel = simd_parallel::par_batch_chunked(&lab_inputs, chunk, simd_lab_xyz::lab_to_xyz_batch);
-            assert_eq!(
-                serial, parallel,
-                "lab->xyz differs at n={n}, chunk={chunk}"
+            let parallel = simd_parallel::par_batch_chunked(
+                &lab_inputs,
+                chunk,
+                simd_lab_xyz::lab_to_xyz_batch,
             );
+            assert_eq!(serial, parallel, "lab->xyz differs at n={n}, chunk={chunk}");
         }
     }
 }
