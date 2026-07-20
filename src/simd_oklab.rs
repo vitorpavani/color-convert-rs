@@ -19,12 +19,21 @@
 //! Processes 8 pixels at a time via `f32x8` lanes with scalar remainder
 //! fallback to [`crate::rgb::oklab`] for the final 0–7 pixels.
 
-/// Process a batch of RGB pixels into Oklab via sRGB inverse gamma +
-/// LMS matrix + cbrt + Oklab matrix — vectorized across f32x8 SIMD lanes.
+/// Public wrapper: auto-selects serial or parallel based on input size.
 ///
-/// Processes 8 pixels at a time. Remainder pixels (final 0–7) fall back
-/// to the scalar [`crate::rgb::oklab`], converting its f64 output to f32.
+/// Delegates to [`crate::simd_parallel::auto_batch`] which chooses serial
+/// SIMD for ≤ 4096 pixels and multi-core rayon for larger batches.
 pub fn rgb_to_oklab_batch(rgb: &[[u8; 3]]) -> Vec<[f32; 3]> {
+    crate::simd_parallel::auto_batch(rgb, rgb_to_oklab_batch_serial)
+}
+
+/// Serial single-core SIMD implementation — processes 8 pixels at a time.
+///
+/// Processes 8 pixels at a time via f32x8 lanes: sRGB inverse gamma
+/// (via compile-time LUT) → LMS matrix → cbrt → Oklab matrix → ×100.
+/// Remainder pixels (final 0–7) fall back to the scalar
+/// [`crate::rgb::oklab`], converting its f64 output to f32.
+pub(crate) fn rgb_to_oklab_batch_serial(rgb: &[[u8; 3]]) -> Vec<[f32; 3]> {
     use wide::f32x8;
 
     let n = rgb.len();

@@ -23,15 +23,10 @@
 
 use wide::f32x8;
 
-/// Process a batch of RGB pixels into HWB via mask-blend SIMD.
+/// Public wrapper: auto-selects serial or parallel based on input size.
 ///
-/// Processes 8 pixels at a time using `f32x8` SIMD lanes. The hue is
-/// computed via the same 3-way mask-blend selection as
-/// [`crate::simd_hsl::rgb_to_hsl_batch`], matching the scalar
-/// `hwb_f64` behaviour which calls `hsl_f64(rgb)[0]`. Whiteness and
-/// blackness are straight-line vector ops (`min×100`, `(1-max)×100`).
-/// Remainder pixels (final 0–7) fall back to the scalar
-/// [`crate::rgb::hwb`], converting its f64 output to f32.
+/// Delegates to [`crate::simd_parallel::auto_batch`] which chooses serial
+/// SIMD for ≤ 4096 pixels and multi-core rayon for larger batches.
 ///
 /// # Mask-blend strategy
 ///
@@ -49,6 +44,11 @@ use wide::f32x8;
 /// Achromatic pixels (max==min) have their hue forced to zero via a
 /// final blend, matching the JS `if (max == min) { h = 0 }` guard.
 pub fn rgb_to_hwb_batch(rgb: &[[u8; 3]]) -> Vec<[f32; 3]> {
+    crate::simd_parallel::auto_batch(rgb, rgb_to_hwb_batch_serial)
+}
+
+/// Serial single-core SIMD implementation — processes 8 pixels at a time.
+pub(crate) fn rgb_to_hwb_batch_serial(rgb: &[[u8; 3]]) -> Vec<[f32; 3]> {
     let n = rgb.len();
     let mut result = Vec::with_capacity(n);
     let mut i = 0;

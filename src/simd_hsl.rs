@@ -38,13 +38,10 @@
 
 use wide::f32x8;
 
-/// Process a batch of RGB pixels into HSL via mask-blend SIMD.
+/// Public wrapper: auto-selects serial or parallel based on input size.
 ///
-/// Processes 8 pixels at a time using `f32x8` SIMD lanes. All three
-/// candidate hue expressions are computed concurrently and selected
-/// with `blend` using the channel-maximum masks, avoiding per-pixel
-/// branching. Remainder pixels (final 0–7) fall back to the scalar
-/// [`crate::rgb::hsl`], converting its f64 output to f32.
+/// Delegates to [`crate::simd_parallel::auto_batch`] which chooses serial
+/// SIMD for ≤ 4096 pixels and multi-core rayon for larger batches.
 ///
 /// # Mask-blend strategy
 ///
@@ -62,6 +59,11 @@ use wide::f32x8;
 /// zero via a final blend, matching the JS `if (max == min) { h = 0 }`
 /// and `if (max == min) { s = 0 }` guards.
 pub fn rgb_to_hsl_batch(rgb: &[[u8; 3]]) -> Vec<[f32; 3]> {
+    crate::simd_parallel::auto_batch(rgb, rgb_to_hsl_batch_serial)
+}
+
+/// Serial single-core SIMD implementation — processes 8 pixels at a time.
+pub(crate) fn rgb_to_hsl_batch_serial(rgb: &[[u8; 3]]) -> Vec<[f32; 3]> {
     let n = rgb.len();
     let mut result = Vec::with_capacity(n);
     let mut i = 0;
@@ -236,22 +238,18 @@ fn channel_simd(h: f32x8, t1: f32x8, t2: f32x8, offset: f32) -> f32x8 {
     result
 }
 
-/// Process a batch of HSL triples into raw RGB floats (0–255) via
-/// mask-blend SIMD.
-///
-/// Processes 8 pixels at a time using `f32x8` SIMD lanes. All four
-/// piecewise hue candidates are computed concurrently per channel and
-/// selected with `blend`, avoiding per-pixel branching. Remainder
-/// pixels (final 0–7) fall back to the scalar [`crate::hsl::rgb`],
-/// converting its f64 output to f32.
-///
-/// # Achromatic guard
+/// Public wrapper: auto-selects serial or parallel based on input size.
 ///
 /// When saturation is exactly zero, all three channels equal `l*255`
 /// (mirroring the JS `if (s === 0)` fast path). The SIMD path applies
 /// this via a mask-blend on the `s == 0` condition, overriding the
 /// piecewise results.
 pub fn hsl_to_rgb_batch(hsl: &[[f32; 3]]) -> Vec<[f32; 3]> {
+    crate::simd_parallel::auto_batch(hsl, hsl_to_rgb_batch_serial)
+}
+
+/// Serial single-core SIMD implementation — processes 8 pixels at a time.
+pub(crate) fn hsl_to_rgb_batch_serial(hsl: &[[f32; 3]]) -> Vec<[f32; 3]> {
     let n = hsl.len();
     let mut result = Vec::with_capacity(n);
     let mut i = 0;

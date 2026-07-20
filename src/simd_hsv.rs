@@ -24,13 +24,10 @@
 
 use wide::f32x8;
 
-/// Process a batch of RGB pixels into HSV via mask-blend SIMD.
+/// Public wrapper: auto-selects serial or parallel based on input size.
 ///
-/// Processes 8 pixels at a time using `f32x8` SIMD lanes. All three
-/// candidate hue expressions are computed concurrently and selected
-/// with `blend` using the channel-maximum masks, avoiding per-pixel
-/// branching. Remainder pixels (final 0–7) fall back to the scalar
-/// [`crate::rgb::hsv`], converting its f64 output to f32.
+/// Delegates to [`crate::simd_parallel::auto_batch`] which chooses serial
+/// SIMD for ≤ 4096 pixels and multi-core rayon for larger batches.
 ///
 /// # Mask-blend strategy
 ///
@@ -49,6 +46,11 @@ use wide::f32x8;
 /// Black pixels (max==0) also get zero hue/saturation via mask-blend to
 /// guard the `s = delta / max * 100` division.
 pub fn rgb_to_hsv_batch(rgb: &[[u8; 3]]) -> Vec<[f32; 3]> {
+    crate::simd_parallel::auto_batch(rgb, rgb_to_hsv_batch_serial)
+}
+
+/// Serial single-core SIMD implementation — processes 8 pixels at a time.
+pub(crate) fn rgb_to_hsv_batch_serial(rgb: &[[u8; 3]]) -> Vec<[f32; 3]> {
     let n = rgb.len();
     let mut result = Vec::with_capacity(n);
     let mut i = 0;

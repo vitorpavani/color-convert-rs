@@ -29,9 +29,17 @@
 //! overhead (work-stealing scheduling) is negligible compared to the SIMD
 //! work inside each chunk, while the fine granularity keeps load balanced.
 //!
+//! ## Auto-parallel threshold
+//!
+//! [`auto_batch`] selects serial or parallel based on input size. Below
+//! [`AUTO_PARALLEL_THRESHOLD`] = 4096 pixels, the single-core SIMD path
+//! is faster because rayon's thread dispatch overhead (~1 µs) exceeds the
+//! parallel gain on a ~40 µs compute window. Above the threshold, all
+//! cores share the work via [`par_batch`].
+//!
 //! ## Routes covered
 //!
-//! The generic signature `par_batch(&[I], F) -> Vec<O>` covers every SIMD
+//! The generic signature `auto_batch(&[I], F) -> Vec<O>` covers every SIMD
 //! batch route regardless of element type (`[u8;3]→[f32;3]`,
 //! `[f32;3]→[f32;3]`, `[f32;4]→[f32;3]`).  See `src/bin/bench_simd_parallel.rs`
 //! for the full enumeration and per-route keep/drop decisions.
@@ -70,4 +78,34 @@ where
     F: Fn(&[I]) -> Vec<O> + Send + Sync,
 {
     par_batch_chunked(input, PARALLEL_CHUNK, f)
+}
+
+/// Threshold below which multi-core overhead exceeds the gain.
+///
+/// At 4096 pixels × ~10 ns/pixel = ~40 µs compute window, rayon's thread
+/// dispatch cost (~1 µs) is a small fraction (~2.5%), making the tradeoff
+/// positive above this threshold. Below it, serial SIMD on one core is faster
+/// because the dispatch cost dominates.
+pub const AUTO_PARALLEL_THRESHOLD: usize = 4096;
+
+/// Automatically selects serial or parallel based on input size.
+///
+/// * Input ≤ [`AUTO_PARALLEL_THRESHOLD`] → serial single-core SIMD
+///   (avoids rayon thread dispatch overhead on tiny batches).
+/// * Input > [`AUTO_PARALLEL_THRESHOLD`] → multi-core via [`par_batch`]
+///   (all cores run their own 8-wide SIMD on their chunk).
+///
+/// The output is element-identical to the serial path — this is a dispatch
+/// decision, not a numeric change.
+pub fn auto_batch<I, O, F>(input: &[I], serial_fn: F) -> Vec<O>
+where
+    I: Sync,
+    O: Send,
+    F: Fn(&[I]) -> Vec<O> + Send + Sync,
+{
+    if input.len() > AUTO_PARALLEL_THRESHOLD {
+        par_batch(input, serial_fn)
+    } else {
+        serial_fn(input)
+    }
 }

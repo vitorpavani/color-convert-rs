@@ -28,20 +28,27 @@ fn srgb_fwd_f32x8(c: wide::f32x8) -> wide::f32x8 {
     mask.blend(pow_branch, linear_branch)
 }
 
-/// Process a batch of XYZ pixels into raw RGB floats via sRGB matrix +
-/// forward sRGB gamma, scaled to 0–255.
+/// Public wrapper: auto-selects serial or parallel based on input size.
 ///
-/// Processes 8 pixels at a time using `f32x8` SIMD lanes for the matrix
-/// multiply (3×3 linear combination with 9 coefficients) AND the forward
-/// sRGB gamma (piecewise `powf(1.0/2.4)` via mask-blend). Remainder
-/// pixels (final 0–7) fall back to the scalar [`crate::xyz::rgb`],
-/// converting its f64 output to f32.
+/// Delegates to [`crate::simd_parallel::auto_batch`] which chooses serial
+/// SIMD for ≤ 4096 pixels and multi-core rayon for larger batches.
 ///
 /// ## Output
 ///
 /// Returns raw `[f32;3]` floats on [0, 255] — the same shape as the
 /// scalar `xyz::rgb` which also returns unrounded floats.
 pub fn xyz_to_rgb_batch(xyz: &[[f32; 3]]) -> Vec<[f32; 3]> {
+    crate::simd_parallel::auto_batch(xyz, xyz_to_rgb_batch_serial)
+}
+
+/// Serial single-core SIMD implementation — processes 8 pixels at a time.
+///
+/// Processes 8 pixels at a time using f32x8 SIMD lanes for the matrix
+/// multiply (3×3 linear combination with 9 coefficients) AND the forward
+/// sRGB gamma (piecewise `powf(1.0/2.4)` via mask-blend). Remainder
+/// pixels (final 0–7) fall back to the scalar [`crate::xyz::rgb`],
+/// converting its f64 output to f32.
+pub(crate) fn xyz_to_rgb_batch_serial(xyz: &[[f32; 3]]) -> Vec<[f32; 3]> {
     use wide::f32x8;
 
     let n = xyz.len();
