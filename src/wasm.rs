@@ -46,6 +46,68 @@ pub fn convert_route_raw(from: &str, to: &str, input: &JsValue) -> Result<JsValu
     Ok(color_to_jsvalue(result))
 }
 
+// ── Batch SIMD exports ──────────────────────────────────────────────
+//
+// Single-color `convert_route` calls go through JS↔wasm boundary overhead
+// (string parsing, JsValue marshalling) that makes them ~10× slower than
+// the original JS library per-call. The batch path eliminates this: pass a
+// flat typed array, get a flat typed array back, amortise the boundary cost
+// across thousands of colours with f32x8 SIMD inside.
+//
+// Input:  flat `[r,g,b, r,g,b, ...]` as Uint8Array (rgb routes) or
+//         flat `[h,s,l, h,s,l, ...]` as Float32Array (inverse routes)
+// Output: flat Float32Array of the target model's channels
+
+macro_rules! batch_rgb_export {
+    ($fn_name:ident, $simd_fn:path, $out_chans:expr) => {
+        #[wasm_bindgen]
+        pub fn $fn_name(input: &[u8]) -> Vec<f32> {
+            let pixels: Vec<[u8; 3]> = input
+                .chunks_exact(3)
+                .map(|c| [c[0], c[1], c[2]])
+                .collect();
+            let result = $simd_fn(&pixels);
+            let mut flat = Vec::with_capacity(result.len() * $out_chans);
+            for px in &result {
+                for &ch in px.iter() {
+                    flat.push(ch);
+                }
+            }
+            flat
+        }
+    };
+}
+
+macro_rules! batch_f32_export {
+    ($fn_name:ident, $simd_fn:path, $out_chans:expr) => {
+        #[wasm_bindgen]
+        pub fn $fn_name(input: &[f32]) -> Vec<f32> {
+            let input_arr: Vec<[f32; 3]> = input
+                .chunks_exact(3)
+                .map(|c| [c[0], c[1], c[2]])
+                .collect();
+            let result = $simd_fn(&input_arr);
+            let mut flat = Vec::with_capacity(result.len() * $out_chans);
+            for px in &result {
+                for &ch in px.iter() {
+                    flat.push(ch);
+                }
+            }
+            flat
+        }
+    };
+}
+
+batch_rgb_export!(rgb_to_hsl_batch, crate::simd_hsl::rgb_to_hsl_batch, 3);
+batch_rgb_export!(rgb_to_hsv_batch, crate::simd_hsv::rgb_to_hsv_batch, 3);
+batch_rgb_export!(rgb_to_cmyk_batch, crate::simd_cmyk::rgb_to_cmyk_batch, 4);
+batch_rgb_export!(rgb_to_lab_batch, crate::simd::rgb_to_lab_batch, 3);
+batch_rgb_export!(rgb_to_xyz_batch, crate::simd::rgb_to_xyz_batch, 3);
+batch_rgb_export!(rgb_to_oklab_batch, crate::simd_oklab::rgb_to_oklab_batch, 3);
+
+batch_f32_export!(hsl_to_rgb_batch, crate::simd_hsl::hsl_to_rgb_batch, 3);
+batch_f32_export!(hsv_to_rgb_batch, crate::simd_hsv_rgb::hsv_to_rgb_batch, 3);
+
 fn parse_model(s: &str) -> Result<Model, String> {
     match s {
         "rgb" => Ok(Model::Rgb),

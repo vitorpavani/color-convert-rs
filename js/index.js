@@ -63,13 +63,29 @@ function makeRouteFn(from, to) {
   return fn;
 }
 
+const BATCH_FNS = {
+  'rgb.hsl':   wasm.rgb_to_hsl_batch,
+  'rgb.hsv':   wasm.rgb_to_hsv_batch,
+  'rgb.cmyk':  wasm.rgb_to_cmyk_batch,
+  'rgb.lab':   wasm.rgb_to_lab_batch,
+  'rgb.xyz':   wasm.rgb_to_xyz_batch,
+  'rgb.oklab': wasm.rgb_to_oklab_batch,
+  'hsl.rgb':   wasm.hsl_to_rgb_batch,
+  'hsv.rgb':   wasm.hsv_to_rgb_batch,
+};
+
 function makeModel(from) {
   const model = {};
   for (const to of MODELS) {
     if (from === to) {
       continue;
     }
-    model[to] = makeRouteFn(from, to);
+    const route = makeRouteFn(from, to);
+    const batchKey = `${from}.${to}`;
+    if (BATCH_FNS[batchKey]) {
+      route.batch = BATCH_FNS[batchKey];
+    }
+    model[to] = route;
   }
   Object.defineProperty(model, 'channels', { value: CHANNELS[from] });
   Object.defineProperty(model, 'labels', { value: LABELS[from] });
