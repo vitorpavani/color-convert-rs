@@ -3,19 +3,16 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-if ! command -v wasm-pack &> /dev/null; then
-  echo "Error: wasm-pack not installed. Install via:" >&2
-  echo "  nix shell nixpkgs#wasm-pack" >&2
-  echo "  # or: cargo install wasm-pack" >&2
-  exit 1
-fi
+echo "Building napi addon (cargo build --features napi --release)..."
+cargo build --features napi --release
 
-wasm-pack build --target nodejs --features wasm
-
-cp pkg/color_convert_rs.js js/
-cp pkg/color_convert_rs_bg.wasm js/
-cp pkg/color_convert_rs.d.ts js/
+case "$(uname -s)" in
+  Linux*)  cp target/release/libcolor_convert_rs.so js/color_convert_rs.node ;;
+  Darwin*) cp target/release/libcolor_convert_rs.dylib js/color_convert_rs.node ;;
+  MINGW*|MSYS*|CYGWIN*) cp target/release/color_convert_rs.dll js/color_convert_rs.node ;;
+  *) echo "Unknown platform"; exit 1 ;;
+esac
 
 echo ""
-echo "wasm module built and copied to js/"
+echo "Native addon built and copied to js/color_convert_rs.node"
 echo "Run tests with: cd js && npm install && npm test"

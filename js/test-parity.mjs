@@ -4,17 +4,17 @@ import { createRequire } from 'node:module';
 import ccJs from 'color-convert';
 
 const require = createRequire(import.meta.url);
-const wasm = require('./color_convert_rs.js');
-
-const KNOWN_GAPS = new Set([
-  'gray.lch',
-]);
+const ccRs = require('./index.js');
 
 const MODELS = [
   'rgb', 'hsl', 'hsv', 'hwb', 'cmyk', 'xyz', 'lab', 'lch',
   'oklab', 'oklch', 'hex', 'keyword', 'ansi16', 'ansi256',
   'hcg', 'apple', 'gray',
 ];
+
+const KNOWN_GAPS = new Set([
+  'gray.lch',
+]);
 
 const SAMPLE_INPUTS = {
   rgb: [255, 128, 0],
@@ -50,7 +50,7 @@ for (const from of MODELS) {
 
     try {
       const expected = ccJs[from][to](input);
-      const actual = wasm.convert_route(from, to, input);
+      const actual = ccRs[from][to](input);
 
       if (deepEqual(expected, actual)) {
         passedRoutes++;

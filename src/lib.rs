@@ -65,8 +65,8 @@ pub mod simd_oklab;
 pub mod simd_oklab_rgb;
 pub mod simd_parallel;
 pub mod simd_xyz;
-#[cfg(feature = "wasm")]
-pub mod wasm;
+#[cfg(feature = "napi")]
+pub mod napi;
 pub mod xyz;
 
 pub use convert::{Color, Model, convert, convert_rounded};

@@ -34,9 +34,8 @@ default = []
 # CubeCL kernels in `src/gpu.rs`. Without this feature the library uses the
 # CPU-SIMD path exclusively and `probe()` always returns `Backend::CpuSimd`.
 gpu = ["dep:wgpu", "dep:pollster", "dep:cubecl", "dep:bytemuck"]
-# wasm-bindgen exports for building an npm drop-in replacement for color-convert
-# via `wasm-pack build --target nodejs`. See `src/wasm.rs` and `js/`.
-wasm = ["dep:wasm-bindgen", "dep:js-sys"]
+# Native Node.js addon via napi-rs. Eliminates the wasm boundary overhead.
+napi = ["dep:napi", "dep:napi-derive"]
 # Integration with the `image` crate — provides `batch::image::to_lab()` etc.
 image = ["dep:image"]
 
@@ -114,11 +113,9 @@ cubecl = { version = "0.10", features = ["wgpu"], optional = true }
 # (Rule 9: issue #22 — GPU kernel data upload/readback)
 bytemuck = { version = "1", optional = true }
 
-# --- wasm exports (optional, behind the `wasm` feature) ---
-# JS interop layer for building an npm drop-in replacement for color-convert.
-# Used by `src/wasm.rs` + `js/` to expose the `convert.rgb.hsl(...)` API.
-wasm-bindgen = { version = "0.2", optional = true }
-js-sys = { version = "0.3", optional = true }
+# --- native Node.js addon (optional, behind the `napi` feature) ---
+napi = { version = "2", features = ["napi8"], optional = true }
+napi-derive = { version = "2", optional = true }
 
 # --- image crate integration (optional, behind the `image` feature) ---
 image = { version = "0.25", optional = true, default-features = false, features = ["jpeg", "png"] }

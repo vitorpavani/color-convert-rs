@@ -1,6 +1,7 @@
 'use strict';
 
-const wasm = require('./color_convert_rs.js');
+const path = require('path');
+const native = require(path.join(__dirname, 'color_convert_rs.node'));
 
 const MODELS = [
   'rgb', 'hsl', 'hsv', 'hwb', 'cmyk', 'xyz', 'lab', 'lch',
@@ -34,57 +35,58 @@ const LABELS = {
   gray: ['gray'],
 };
 
+const STRING_MODELS = new Set(['hex', 'keyword']);
+const NUMBER_MODELS = new Set(['ansi16', 'ansi256']);
+
 function normalizeArgs(args) {
   const arg0 = args[0];
-  if (arg0 === undefined || arg0 === null) {
-    return arg0;
-  }
-  if (arg0.length > 1) {
-    return arg0;
-  }
+  if (arg0 === undefined || arg0 === null) return arg0;
+  if (Array.isArray(arg0)) return arg0;
+  if (typeof arg0 === 'string' && arg0.length > 1) return arg0;
   return args;
 }
 
 function makeRouteFn(from, to) {
+  const toIsString = STRING_MODELS.has(to);
+  const fromIsString = STRING_MODELS.has(from);
+  const toIsNumber = NUMBER_MODELS.has(to);
+
   const fn = function (...args) {
     const input = normalizeArgs(args);
-    if (input === undefined || input === null) {
-      return input;
+    if (input === undefined || input === null) return input;
+    if (fromIsString) {
+      if (toIsString) return native.convertFromStringToString(from, to, String(input));
+      if (toIsNumber) return native.convertFromStringToNumber(from, to, String(input));
+      return native.convertFromString(from, to, String(input));
     }
-    return wasm.convert_route(from, to, input);
+    if (toIsString) return native.convertToString(from, to, Array.from(input));
+    if (toIsNumber) return native.convertToNumber(from, to, Array.from(input));
+    return native.convertRoute(from, to, Array.from(input));
   };
   fn.raw = function (...args) {
     const input = normalizeArgs(args);
-    if (input === undefined || input === null) {
-      return input;
-    }
-    return wasm.convert_route_raw(from, to, input);
+    if (input === undefined || input === null) return input;
+    return native.convertRouteRaw(from, to, Array.from(input));
   };
   return fn;
 }
 
 const BATCH_FNS = {
-  'rgb.hsl':   wasm.rgb_to_hsl_batch,
-  'rgb.hsv':   wasm.rgb_to_hsv_batch,
-  'rgb.cmyk':  wasm.rgb_to_cmyk_batch,
-  'rgb.lab':   wasm.rgb_to_lab_batch,
-  'rgb.xyz':   wasm.rgb_to_xyz_batch,
-  'rgb.oklab': wasm.rgb_to_oklab_batch,
-  'hsl.rgb':   wasm.hsl_to_rgb_batch,
-  'hsv.rgb':   wasm.hsv_to_rgb_batch,
+  'rgb.hsl':   native.rgbToHslBatch,
+  'rgb.hsv':   native.rgbToHsvBatch,
+  'rgb.cmyk':  native.rgbToCmykBatch,
+  'rgb.lab':   native.rgbToLabBatch,
+  'rgb.xyz':   native.rgbToXyzBatch,
+  'rgb.oklab': native.rgbToOklabBatch,
 };
 
 function makeModel(from) {
   const model = {};
   for (const to of MODELS) {
-    if (from === to) {
-      continue;
-    }
+    if (from === to) continue;
     const route = makeRouteFn(from, to);
     const batchKey = `${from}.${to}`;
-    if (BATCH_FNS[batchKey]) {
-      route.batch = BATCH_FNS[batchKey];
-    }
+    if (BATCH_FNS[batchKey]) route.batch = BATCH_FNS[batchKey];
     model[to] = route;
   }
   Object.defineProperty(model, 'channels', { value: CHANNELS[from] });
@@ -93,9 +95,7 @@ function makeModel(from) {
 }
 
 const convert = {};
-for (const from of MODELS) {
-  convert[from] = makeModel(from);
-}
+for (const from of MODELS) convert[from] = makeModel(from);
 
 module.exports = convert;
 module.exports.default = convert;
