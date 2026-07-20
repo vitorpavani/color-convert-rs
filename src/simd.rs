@@ -404,6 +404,33 @@ mod tests {
         }
     }
 
+    /// Behavior: `srgb_inv_lut_u8x8` must match `srgb_inv_f32x8(u8/255.0)` for
+    /// ALL 256 possible u8 inputs — exhaustive sweep, no tolerance needed
+    /// since the LUT formula is bit-identical to the scalar reference.
+    ///
+    /// This test will FAIL TO COMPILE until `srgb_inv_lut_u8x8` exists (RED gate).
+    #[test]
+    fn srgb_inv_lut_u8x8_exhaustive_match() {
+        for ch in 0u8..=255u8 {
+            let want = srgb_inv_f32x8(f32x8::splat(ch as f32 / 255.0)).to_array();
+            let lut_full: [u8; 8] = [ch; 8];
+            // This call will FAIL TO COMPILE until the function exists:
+            let got = srgb_inv_lut_u8x8(lut_full).to_array();
+            for (g, w) in got.iter().zip(want.iter()) {
+                assert_eq!(
+                    g.to_bits(),
+                    w.to_bits(),
+                    "u8={}: LUT value {:.6e} ({:#010x}) != powf value {:.6e} ({:#010x})",
+                    ch,
+                    g,
+                    g.to_bits(),
+                    w,
+                    w.to_bits()
+                );
+            }
+        }
+    }
+
     /// Behavior: `lab_transfer_f32x8` must match the scalar `lab_transfer_f32`
     /// for representative values across all 8 SIMD lanes.
     ///
