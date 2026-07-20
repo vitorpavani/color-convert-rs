@@ -33,13 +33,22 @@ pub enum Backend {
 
 /// Probe the current host for a physical GPU adapter.
 ///
-/// Uses `wgpu` to enumerate adapters. Returns [`Backend::Gpu`] when at least
-/// one [`wgpu::DeviceType::DiscreteGpu`] or [`wgpu::DeviceType::IntegratedGpu`]
-/// adapter is found. Falls back to [`Backend::CpuSimd`] on any failure,
-/// including a host with no GPU hardware, missing Vulkan drivers, or an
-/// unexpected panic from the `wgpu` crate itself.
+/// With the `gpu` feature enabled, uses `wgpu` to enumerate adapters and
+/// returns [`Backend::Gpu`] when at least one
+/// [`wgpu::DeviceType::DiscreteGpu`] or [`wgpu::DeviceType::IntegratedGpu`]
+/// adapter is found. Falls back to [`Backend::CpuSimd`] on any failure.
+///
+/// Without the `gpu` feature, always returns [`Backend::CpuSimd`].
+#[cfg(feature = "gpu")]
 pub fn probe() -> Backend {
     std::panic::catch_unwind(try_probe).unwrap_or(Backend::CpuSimd)
+}
+
+/// Probe stub when the `gpu` feature is disabled — always returns
+/// [`Backend::CpuSimd`], since no GPU code is compiled in.
+#[cfg(not(feature = "gpu"))]
+pub fn probe() -> Backend {
+    Backend::CpuSimd
 }
 
 /// Returns `true` when the probe resolved to [`Backend::Gpu`].
@@ -53,6 +62,7 @@ pub fn gpu_present() -> bool {
 
 /// The actual probing logic, separated so [`std::panic::catch_unwind`] can
 /// guard the entire wgpu interaction.
+#[cfg(feature = "gpu")]
 fn try_probe() -> Backend {
     let instance =
         wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle_from_env());

@@ -10,6 +10,7 @@ pub mod cmyk;
 mod color_name;
 pub mod convert;
 mod error;
+#[cfg(feature = "gpu")]
 pub mod gpu;
 pub mod gray;
 pub mod hcg;
