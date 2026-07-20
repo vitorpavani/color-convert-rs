@@ -1,6 +1,6 @@
 {
   "name": "color-convert-rs",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Drop-in replacement for color-convert backed by Rust+wasm SIMD",
   "license": "MIT",
   "repository": {
@@ -23,7 +23,8 @@
     "index.js",
     "index.d.ts",
     "color_convert_rs.js",
-    "color_convert_rs_bg.wasm"
+    "color_convert_rs_bg.wasm",
+    "README.md"
   ],
   "scripts": {
     "test": "node test-parity.mjs"
