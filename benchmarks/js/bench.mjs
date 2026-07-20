@@ -173,3 +173,45 @@ for (const route of routeNames) {
 process.stdout.write(
   `\nAppended ${routeNames.length} records to ${RESULTS_PATH}\n`,
 );
+
+// ── Inverse routes (non-RGB input, pre-convert untimed) ─────────────
+
+// hsv->rgb: pre-convert RGB→HSV (untimed), then time hsv.rgb only.
+{
+  const hsvInputs = pixels.map(([r, g, b]) => convert.rgb.hsv(r, g, b));
+  const bestNs = (() => {
+    const warmup = WARMUP;
+    const iters = TIMED_ITERS;
+    // Warmup
+    for (let i = 0; i < warmup; i++) {
+      for (let j = 0; j < hsvInputs.length; j++) {
+        const [h, s, v] = hsvInputs[j];
+        convert.hsv.rgb(h, s, v);
+      }
+    }
+    let best = Infinity;
+    for (let i = 0; i < iters; i++) {
+      const start = process.hrtime.bigint();
+      for (let j = 0; j < hsvInputs.length; j++) {
+        const [h, s, v] = hsvInputs[j];
+        convert.hsv.rgb(h, s, v);
+      }
+      const elapsed = Number(process.hrtime.bigint() - start);
+      if (elapsed < best) best = elapsed;
+    }
+    return best;
+  })();
+  const record = makeRecord(bestNs, 'hsv->rgb');
+  fs.appendFileSync(RESULTS_PATH, JSON.stringify(record) + '\n');
+  const msOut = record.ms.toFixed(3);
+  const mpsOut = record.value.toFixed(1);
+  process.stdout.write(
+    `${'hsv->rgb'.padEnd(18)}  N=${String(N).padStart(8)}  ` +
+      `best=${msOut.padStart(9)} ms  ` +
+      `${mpsOut.padStart(10)} MP/s\n`,
+  );
+}
+
+process.stdout.write(
+  `\nAppended 1 inverse-route record to ${RESULTS_PATH}\n`,
+);
