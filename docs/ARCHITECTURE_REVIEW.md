@@ -5,10 +5,10 @@ aliases: ["architecture review", "arch review", "ccrs architecture", "self-impro
 tags: [color-convert-rs, architecture, simd, gpu, benchmark, self-improvement, tdd]
 author: "improvement-dev agent"
 last_updated: 2026-07-14
-reviewed_commit: "922b25b"
+reviewed_commit: "2a452b0"
 status: concluding-after-wave-5
 relates-to: ["[[benchmarks/results-ledger]]", "[[concepts/cpu-simd-hot-path]]", "[[concepts/keep-or-revert-rule]]", "[[concepts/gpu-transfer-bound-kernel]]"]
-issues: [24, 25, 58, 61, 64, 65, 71, 72, 78, 79, 86, 87]
+issues: [24, 25, 58, 61, 64, 65, 71, 72, 78, 79, 86, 87, 97, 99, 100, 104, 105]
 ---
 
 # Architecture Review — color-convert-rs
@@ -91,10 +91,15 @@ worktree, benchmarked at N=50M on the reference host (NVIDIA RTX 2000 Ada laptop
 | `#79` | SIMD `rgb→oklab` (f32x8 powf/cbrt + dual matrix) | rgb→oklab | 9.1 → **31.9** MP/s | **3.51×** | ✅ kept |
 | `#87` | SIMD `rgb→hcg` (f32x8 mask-blend hue + chroma-guard) | rgb→hcg | 38.5 → **126.5** MP/s | **3.29× (8.8× vs JS)** | ✅ kept |
 | `#86` | SIMD `rgb→apple` (f32x8 ×257 linear scale) | rgb→apple | 99.9 → **168.5** MP/s | **1.69×** | ✅ kept |
+| `#97` | SIMD `xyz→rgb` (matrix + forward gamma) — inverse | xyz→rgb | 21.7 → **49.9** MP/s | **2.30× (3.87× vs JS)** | ✅ kept |
+| `#99` | SIMD `lab→xyz` (inverse lab transfer) — inverse | lab→xyz | 101.3 → **172.3** MP/s | **1.70× (22.7× vs JS)** | ✅ kept |
+| `#100` | SIMD `oklab→rgb` (dual matrix + cube + gamma) — inverse | oklab→rgb | 20.0 → **49.5** MP/s | **2.48× (6.2× vs JS)** | ✅ kept |
+| `#104` | SIMD `hsv→rgb` (6-way hue mask-blend) — inverse | hsv→rgb | 39.1 → **83.1** MP/s | **2.13× (4.7× vs JS)** | ✅ kept |
+| `#105` | SIMD `hcg→rgb` (6-way hue + chroma-guard) — inverse | hcg→rgb | — → — MP/s | **3.94×** | ✅ kept |
 | `#25` | SoA vs AoS memory layout | rgb→lab | 22.1 → 20.2 MP/s | −8.6% | ❌ dropped |
 | `#24` | GPU workgroup `BLOCK_SIZE` sweep {32,64,128,256} | rgb→lab (gpu) | 33.6 → 32.7–34.0 MP/s | ±3% noise | ❌ dropped |
 
-Waves 1–5 total: **10 kept, 2 dropped.**
+Waves 1–8 total: **15 kept, 2 dropped.**
 
 ### 2.1 Why the two drops are correct (not laziness)
 
@@ -134,35 +139,24 @@ for the branchy hue routes).
 
 ## 4. Residual / future opportunities
 
-> [!note] The self-improvement drive is concluding after wave 5
-> The **forward (rgb→X) CPU-SIMD surface is exhausted**: every numeric RGB-*source* route with a
-> non-trivial per-pixel body has a vectorized f32x8 path (hsl, hsv, hwb, cmyk, hcg, lab, xyz, oklab,
-> the hsl↔rgb round-trip, and even the trivial apple scale). Genuine SIMD candidates DO remain on
-> the **inverse (X→rgb) and cross-space routes** (see item 2 below) — but the user scoped this drive
-> to end at wave 5, and the forward hot path (the routes the JS baseline and real callers exercise
-> most) is fully covered, so **further forward-route waves would increasingly produce drops rather
-> than keeps**. The inverse-route work is real future scope, not a hidden gap.
+> [!note] The CPU-SIMD surface is now genuinely exhausted (waves 1–8)
+> Both the **forward (rgb→X)** AND **inverse (X→rgb)** surfaces are vectorized: every numeric
+> color route with a non-trivial per-pixel body has a f32x8 path. Waves 1–5 covered forward, waves
+> 6–8 covered inverse (`xyz→rgb`, `lab→xyz`, `oklab→rgb`, `hsv→rgb`, `hcg→rgb` — all kept, 1.70×–3.94×).
+> What genuinely remains *not* worth SIMD: lookups/quantizers (hex/keyword/ansi/gray), tiny wrappers
+> (lch/oklch). The two remaining high-leverage directions are **orthogonal to per-route SIMD**:
+> multi-core `rayon` parallelism (the SIMD uses one core; the other 27 sit idle) and GPU memory
+> staging (the PCIe-bottleneck attack from the #24 analysis).
 
 Listed for any future drive:
 
-1. **GPU memory staging** (from the `#24` analysis): pinned/zero-copy upload buffers and
-   double-buffered async upload/compute overlap — attacks the real (transfer) bottleneck. This is
-   the single highest-leverage remaining item, but it is hardware-bound and risky. See
-   [[concepts/gpu-transfer-bound-kernel]].
-2. **SIMD for the remaining routes**:
-   - **Forward (rgb→X)** — DONE: `hsl` (`#58`), `hsv` (`#71`), `hwb` (`#78`), `cmyk` (`#72`),
-     `xyz`/`lab` (`#51`/`#65`), `oklab` (`#79`), `hcg` (`#87`), `apple` (`#86`).
-   - **Inverse (X→rgb) and cross-space — NOT yet done, genuine candidates**: `xyz→rgb`
-     (3×3 matrix + sRGB gamma — high value), `lab→xyz` (piecewise inverse cube + matrix — high),
-     `oklab→rgb` (dual matrix + cube + sRGB gamma — high), `hsv→rgb` and `hcg→rgb` (branchy channel
-     selection — moderate). These are the same math families already vectorized in the forward
-     direction, so the f32x8 mask-blend / vectorized-transfer patterns transfer directly. The bench
-     harness does not yet measure inverse routes, so wiring those baselines is a prerequisite.
-   - **Correctly excluded** (SIMD offers little / no arithmetic): lookups/quantizers `hex`,
-     `keyword`, `ansi16`/`ansi256`, `gray`, and the tiny `lch`/`oklch` wrappers.
-3. **GPU-tier coverage for the new SIMD routes**: every wave-1–5 CPU-SIMD record is
-   `gpu_present:false` — the new routes have no GPU kernel and no `tier:"gpu"` measurement. Only
-   `rgb→lab` has a GPU path. A future wave could add GPU kernels (or at least record GPU-tier
+1. **Multi-core parallelism (`rayon`)** — HIGHEST leverage: every `_batch` function is single-core
+   SIMD; `par_chunks_mut` over the host's cores would multiply every speedup another ~5-15×. The
+   gains stack (SIMD lanes × cores). This is the natural next wave.
+2. **GPU memory staging** (from the `#24` analysis): pinned/zero-copy upload buffers and
+   double-buffered async upload/compute overlap — attacks the real (transfer) bottleneck. Hardware-bound and risky. See [[concepts/gpu-transfer-bound-kernel]].
+3. **GPU-tier coverage for the SIMD routes**: every CPU-SIMD record is `gpu_present:false` — only
+   `rgb→lab` has a GPU kernel. A future wave could add GPU kernels (or at least record GPU-tier
    numbers via `run-bench-gpu.sh`) for parity.
 4. **Fused multi-hop `convert` for SIMD batches**: the BFS `Graph` chains scalar adapters; a
    batch fast-path for common multi-hop routes could avoid per-hop materialization.

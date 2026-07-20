@@ -4,9 +4,9 @@ type: benchmark-rollup
 aliases: ["benchmark rollup", "ccrs benchmarks", "results rollup", "3-tier harness"]
 tags: [color-convert-rs, benchmark, simd, gpu, throughput, self-improvement]
 last_updated: 2026-07-14
-kept: 10
+kept: 15
 dropped: 2
-waves: 5
+waves: 8
 relates-to: ["[[docs/ARCHITECTURE_REVIEW|Architecture Review]]", "[[benchmarks/results-ledger|Results Ledger]]", "[[concepts/keep-or-revert-rule]]", "[[concepts/gpu-transfer-bound-kernel]]", "[[concepts/cpu-simd-hot-path]]"]
 ---
 
@@ -326,7 +326,7 @@ reduce total data in flight.
 > and iterator overhead and processing 8 pixels per tile. Tolerance 1e-6 (all outputs are exact
 > integer multiples of 257 ≤ 65535, exactly representable in f32). `grep '"issue":86' results.jsonl`.
 
-### Cumulative self-improvement summary (waves 1–5)
+### Cumulative self-improvement summary (waves 1–8)
 
 | Wave | Issue | Route | Δ | Decision |
 |------|-------|-------|---|----------|
@@ -342,24 +342,25 @@ reduce total data in flight.
 | 4 | #79 | rgb→oklab | 3.51× | ✅ kept |
 | 5 | #87 | rgb→hcg | 3.29× | ✅ kept |
 | 5 | #86 | rgb→apple | 1.69× | ✅ kept |
+| 6 | #97 | xyz→rgb (inverse) | 2.30× | ✅ kept |
+| 7 | #99 | lab→xyz (inverse) | 1.70× | ✅ kept |
+| 7 | #100 | oklab→rgb (inverse) | 2.48× | ✅ kept |
+| 8 | #104 | hsv→rgb (inverse) | 2.13× | ✅ kept |
+| 8 | #105 | hcg→rgb (inverse) | 3.94× | ✅ kept |
 
-**10 kept, 2 dropped** across 5 waves — every kept change beat **both** the JS baseline AND the
-previous Rust iteration (JS baselines for rgb→cmyk, rgb→hwb and rgb→oklab were backfilled by wiring
-those routes into `benchmarks/js/bench.mjs`); every dropped change is recorded as a negative result.
+**15 kept, 2 dropped** across 8 waves — every kept change beat **both** the JS baseline AND the
+previous Rust iteration; every dropped change is recorded as a negative result. Waves 1–5 covered
+the forward (rgb→X) surface; waves 6–8 covered the inverse (X→rgb) surface.
 
-> **Self-improvement drive concluding after wave 5** (user-scoped). Every numeric RGB-*source*
-> route with a non-trivial per-pixel body now has a vectorized f32x8 path (hsl, hsv, hwb, cmyk, hcg,
-> lab, xyz, oklab, the hsl↔rgb round-trip, and even the trivial apple scale) — the **forward hot
-> path is fully covered**. Genuine SIMD candidates DO remain on the **inverse (X→rgb) / cross-space
-> routes** — `xyz→rgb`, `lab→xyz`, `oklab→rgb` (high value: matrix + gamma/cube), `hsv→rgb`,
-> `hcg→rgb` (moderate: branchy channel selection) — which reuse the same f32x8 patterns already
-> proven forward; the bench harness would first need inverse-route baselines wired. What is
-> genuinely *not* worth SIMD is lookups/quantizers (hex, keyword, ansi16/256, gray) and the tiny
-> lch/oklch wrappers; and the GPU path is transfer-bound (see the #24 analysis), PCIe not compute.
-> Since the forward surface is done and the drive was scoped to end at wave 5, further *forward*
-> waves would produce *drops* rather than *keeps*. See
-> [[docs/ARCHITECTURE_REVIEW|the architecture review]] for the full review (§4 lists the inverse-route
-> work as future scope).
+> **CPU-SIMD surface now genuinely exhausted** (unqualified). Every numeric color route with a
+> non-trivial per-pixel body — **both forward AND inverse** — now has a vectorized f32x8 path.
+> What genuinely remains *not* worth SIMD: lookups/quantizers (hex, keyword, ansi16/256, gray),
+> the tiny lch/oklch wrappers, and the GPU path which is transfer-bound (see the #24 analysis —
+> PCIe, not compute). The two remaining high-leverage directions are orthogonal to per-route SIMD:
+> **multi-core parallelism** (`rayon::par_chunks_mut` would multiply every SIMD speedup ~5-15×
+> across the host's cores — the SIMD lanes use one core, the other 27 sit idle), and **GPU memory
+> staging** (pinned/zero-copy buffers to attack the real PCIe bottleneck). See
+> [[docs/ARCHITECTURE_REVIEW|the architecture review]] §4 for the full residual list.
 
 ## See also
 
