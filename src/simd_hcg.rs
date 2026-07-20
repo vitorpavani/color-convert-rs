@@ -1,4 +1,4 @@
-//! CPU-SIMD batch conversion for rgb→hcg using mask-blend hue selection.
+//! CPU-SIMD batch conversion for rgb↔hcg using mask-blend selection.
 //!
 //! Uses [`wide::f32x8`] to process 8 pixels at once.
 //!
@@ -11,13 +11,31 @@
 //! Achromatic pixels (chroma≤0) have their hue forced to zero via blend.
 //! The grayscale div-by-zero guard (chroma==1 → 0) also uses mask-blend.
 //!
+//! ## hcg→rgb ([`hcg_to_rgb_batch`])
+//!
+//! The scalar reference is [`crate::hcg::rgb`], which normalises HCG to
+//! [0,1], handles the achromatic case (c==0 → r=g=b = g×255), then
+//! applies a 6-way piecewise function via `(h%1)×6` hue slices. This SIMD
+//! path computes all six candidate triples concurrently and selects via
+//! mask-blend in reverse if/else-if precedence. The achromatic case is
+//! handled via a `c==0` mask-blend overriding the piecewise results.
+//! Negative hue values (from the RGB→HCG conversion) are forced to the
+//! else/default case, matching the scalar f64 `floor()` semantics where
+//! f32 `trunc()` differs for negative inputs.
+//!
 //! ## Tolerance
 //!
 //! Each SIMD lane uses f32 (~7 decimal digits) vs scalar f64 (~15).
-//! Division by chroma (as small as 1/255≈0.004) amplifies the gap to ~3e-4.
+//!
+//! For rgb→hcg: division by chroma (as small as 1/255≈0.004) amplifies
+//! the gap to ~3e-4.
 //! - h (0–360): absolute tolerance ≤ 1e-3
 //! - c (0–100): absolute tolerance ≤ 1e-3
 //! - g (0–100): absolute tolerance ≤ 1e-3
+//!
+//! For hcg→rgb: 6-way piecewise linear interpolation in [0,1] scaled by
+//! 255; the f32 vs f64 gap is ~3e-5 in [0,255].
+//! - r/g/b (0–255): absolute tolerance ≤ 1e-3
 //!
 //! See `tests/simd_hcg_routes.rs`.
 
