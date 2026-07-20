@@ -3,7 +3,7 @@ tags: [dashboard]
 aliases:
   - Active Work
   - Open Issues
-updated: 2026-07-13
+updated: 2026-07-20
 ---
 
 # Active Work
@@ -15,45 +15,43 @@ RED → GREEN → BLUE (see [AGENTS.md](../AGENTS.md) Rule 14).
 
 ---
 
+## ✅ Project Status: Production-Ready
+
+All 17 color models ported. 16 SIMD batch routes (f32x8). Multi-core parallelism (rayon).
+GPU kernels (CubeCL). sRGB LUT + fast cbrt. 10-wave optimization drive complete.
+
+**Headline:** rgb→lab **111.3 MP/s** single-core (10.3× over scalar), **164.0 MP/s** multi-core
+(15.2×). See [[01-optimization-journey]] for the full story.
+
 ## 🚨 Blockers
 
 | Issue | Title | Waiting on |
 |-------|-------|------------|
-| _(none yet)_ | | |
+| _(none)_ | | |
 
 ## 🔄 In Progress
 
 | Issue | Title | Phase | Worktree |
 |-------|-------|-------|----------|
-| _(none yet — scaffolding session)_ | | | |
+| _(none — optimization drive complete)_ | | | |
 
-## 📋 Up Next (epic:mvp-port foundation)
+## 📋 Optimization Drive Summary (10 waves, 33 kept / 7 dropped)
 
-Recommended pickup order — infra first (they unblock every route):
+| Wave | Scope | Kept | Dropped |
+|------|-------|------|---------|
+| 1–5 | Forward SIMD (rgb→X) | 10 | 2 (SoA #25, GPU sweep #24) |
+| 6–8 | Inverse SIMD (X→rgb) | 5 | 0 |
+| 9 | Multi-core (rayon) | 13 | 3 (cmyk/apple/lab→xyz) |
+| T1–T3 | Algorithmic (LUT, cbrt, fused convert, GPU parity) | 5 | 2 (double-buffer #114, chunk tuning #122) |
 
-| # | Issue | Size |
-|---|-------|------|
-| 1 | infra: Cargo project scaffold | S |
-| 2 | infra: JS reference-vector generator | M |
-| 3 | infra: vector test harness (rstest) | M |
-| 4 | infra: error type + module layout | S |
-| 5 | route: hsl → {rgb, hsv, hcg} | S |
-| … | (see `gh issue list`) | |
+See [[01-optimization-journey]] for the full per-wave breakdown.
 
-## Epics
+## Remaining Opportunities
 
-| Epic | Meaning | Open |
-|------|---------|------|
-| `epic:mvp-port` | Minimal compatible port of all routes | 18 |
-| `epic:gpu` | CubeCL GPU + CPU-SIMD + runtime probe | 4 |
-| `epic:self-improvement` | Post-MVP measured improvements | 3 |
+The CPU optimization surface is genuinely exhausted. The only remaining direction:
 
-## How to Refresh
-
-```bash
-gh issue list --state open --limit 50 --json number,title,labels
-gh issue list --state open --label 'epic:mvp-port' --json number,title
-```
+- **GPU memory staging** — pinned/zero-copy buffers to attack the PCIe bottleneck. But #114
+  confirmed the GPU is transfer-bound with nothing to overlap. Low expected value.
 
 ---
 
