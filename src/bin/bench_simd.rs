@@ -16,6 +16,7 @@ use std::io::Write;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use color_convert_rs::hsl;
+use color_convert_rs::lab;
 use color_convert_rs::rgb;
 use color_convert_rs::simd;
 use color_convert_rs::simd_apple;
@@ -24,6 +25,7 @@ use color_convert_rs::simd_hcg;
 use color_convert_rs::simd_hsl;
 use color_convert_rs::simd_hsv;
 use color_convert_rs::simd_hwb;
+use color_convert_rs::simd_lab_xyz;
 use color_convert_rs::simd_oklab;
 use color_convert_rs::simd_xyz;
 use color_convert_rs::xyz;
@@ -965,5 +967,92 @@ fn main() {
         "xyz->rgb (SIMD)", n, xyz_rgb_simd_ms, xyz_rgb_simd_mps, xyz_rgb_speedup, xyz_rgb_decision
     );
 
-    println!("\nAppended 21 records to {}", RESULTS_PATH);
+    // ── LAB→XYZ routes (second inverse route) ─────────────────────────
+    // Pre-convert RGB→lab (NOT timed) so we measure only lab→xyz.
+    let lab_inputs: Vec<[f32; 3]> = pixels
+        .iter()
+        .map(|&p| rgb::xyz(p))
+        .map(xyz::lab)
+        .map(|[l, a, b]| [l as f32, a as f32, b as f32])
+        .collect();
+
+    // lab->xyz (scalar batch baseline via f64 lab::xyz, materialized Vec to prevent elision)
+    let mut lab_xyz_scalar_ms: f64 = f64::MAX;
+    for _ in 0..warmup_iters {
+        let result: Vec<[f64; 3]> = lab_inputs
+            .iter()
+            .map(|&p| [p[0] as f64, p[1] as f64, p[2] as f64])
+            .map(lab::xyz)
+            .collect();
+        black_box(result);
+    }
+    for _ in 0..timed_iters {
+        let start = Instant::now();
+        let result: Vec<[f64; 3]> = lab_inputs
+            .iter()
+            .map(|&p| [p[0] as f64, p[1] as f64, p[2] as f64])
+            .map(lab::xyz)
+            .collect();
+        black_box(result);
+        lab_xyz_scalar_ms = lab_xyz_scalar_ms.min(start.elapsed().as_secs_f64() * 1e3);
+    }
+    let lab_xyz_scalar_mps = (n as f64 / 1e6) / (lab_xyz_scalar_ms / 1000.0);
+    append_record(
+        &ctx,
+        RecordParams {
+            route: "lab->xyz",
+            best_ms: lab_xyz_scalar_ms,
+            n,
+            iters: timed_iters,
+            warmup: warmup_iters,
+            decision: "baseline",
+            notes: &format!(
+                "Rust scalar batch baseline (pre-SIMD, f64 lab::xyz), N={}",
+                format_number(n)
+            ),
+            baseline_ref: None,
+        },
+    );
+    println!(
+        "{:<18}  N={:>8}  best={:>9.3} ms  {:>10.1} MP/s  [scalar]",
+        "lab->xyz (scalar)", n, lab_xyz_scalar_ms, lab_xyz_scalar_mps
+    );
+
+    // lab->xyz (SIMD batch via inverse lab transfer + white-point scale)
+    let mut lab_xyz_simd_ms: f64 = f64::MAX;
+    for _ in 0..warmup_iters {
+        black_box(simd_lab_xyz::lab_to_xyz_batch(&lab_inputs));
+    }
+    for _ in 0..timed_iters {
+        let start = Instant::now();
+        black_box(simd_lab_xyz::lab_to_xyz_batch(&lab_inputs));
+        lab_xyz_simd_ms = lab_xyz_simd_ms.min(start.elapsed().as_secs_f64() * 1e3);
+    }
+    let lab_xyz_simd_mps = (n as f64 / 1e6) / (lab_xyz_simd_ms / 1000.0);
+    let lab_xyz_kept = lab_xyz_simd_mps > lab_xyz_scalar_mps;
+    let lab_xyz_decision = if lab_xyz_kept { "kept" } else { "reverted" };
+    let lab_xyz_speedup = lab_xyz_simd_mps / lab_xyz_scalar_mps;
+    append_record(
+        &ctx,
+        RecordParams {
+            route: "lab->xyz",
+            best_ms: lab_xyz_simd_ms,
+            n,
+            iters: timed_iters,
+            warmup: warmup_iters,
+            decision: lab_xyz_decision,
+            notes: &format!(
+                "wide::f32x8 SIMD batch (inv lab transfer mask-blend + wp scale), N={}, speedup={:.2}x, tol=1e-3",
+                format_number(n),
+                lab_xyz_speedup
+            ),
+            baseline_ref: Some(&ctx.commit),
+        },
+    );
+    println!(
+        "{:<18}  N={:>8}  best={:>9.3} ms  {:>10.1} MP/s  [SIMD]  speedup={:.2}x  decision={}",
+        "lab->xyz (SIMD)", n, lab_xyz_simd_ms, lab_xyz_simd_mps, lab_xyz_speedup, lab_xyz_decision
+    );
+
+    println!("\nAppended 24 records to {}", RESULTS_PATH);
 }
