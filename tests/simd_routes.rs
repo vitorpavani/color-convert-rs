@@ -308,8 +308,8 @@ fn xyz_to_rgb_batch_matches_scalar() {
 
     // Edge cases: black XYZ and D65 white XYZ
     let edge_xyz: [[f32; 3]; 2] = [
-        [0.0, 0.0, 0.0],                              // pure black
-        [95.047, 100.0, 108.883],                     // D65 white
+        [0.0, 0.0, 0.0],          // pure black
+        [95.047, 100.0, 108.883], // D65 white
     ];
 
     let scalar: Vec<[f64; 3]> = edge_xyz
@@ -319,7 +319,11 @@ fn xyz_to_rgb_batch_matches_scalar() {
         .collect();
     let simd_result = simd_xyz::xyz_to_rgb_batch(&edge_xyz);
 
-    assert_eq!(simd_result.len(), scalar.len(), "edge-case batch size mismatch");
+    assert_eq!(
+        simd_result.len(),
+        scalar.len(),
+        "edge-case batch size mismatch"
+    );
 
     for (i, (simd_val, scalar_val)) in simd_result.iter().zip(scalar.iter()).enumerate() {
         let _f32_check: [f32; 3] = *simd_val;

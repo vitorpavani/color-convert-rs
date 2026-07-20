@@ -25,6 +25,8 @@ use color_convert_rs::simd_hsl;
 use color_convert_rs::simd_hsv;
 use color_convert_rs::simd_hwb;
 use color_convert_rs::simd_oklab;
+use color_convert_rs::simd_xyz;
+use color_convert_rs::xyz;
 
 // ── Path to the append-only results ledger ─────────────────────────────
 const RESULTS_PATH: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/benchmarks/results.jsonl");
@@ -878,5 +880,90 @@ fn main() {
         "rgb->apple (SIMD)", n, apple_simd_ms, apple_simd_mps, apple_speedup, apple_decision
     );
 
-    println!("\nAppended 19 records to {}", RESULTS_PATH);
+    // ── XYZ→RGB routes (first INVERSE route: non-rgb input) ────────────
+    // Pre-convert RGB→XYZ once (NOT timed) so we measure only xyz→rgb.
+    let xyz_inputs: Vec<[f32; 3]> = simd::rgb_to_xyz_batch(&pixels);
+
+    // Best-of-N inline over a &[[f32;3]] input (bench_batch is &[[u8;3]]-typed).
+    // IMPORTANT: black_box a *materialized Vec* of results — never .count(), which
+    // lets the compiler elide the actual xyz::rgb work (the #19/#58 elision bug).
+    // xyz->rgb (scalar batch baseline)
+    let mut xyz_rgb_scalar_ms: f64 = f64::MAX;
+    for _ in 0..warmup_iters {
+        let result: Vec<[f64; 3]> = xyz_inputs
+            .iter()
+            .map(|&p| [p[0] as f64, p[1] as f64, p[2] as f64])
+            .map(xyz::rgb)
+            .collect();
+        black_box(result);
+    }
+    for _ in 0..timed_iters {
+        let start = Instant::now();
+        let result: Vec<[f64; 3]> = xyz_inputs
+            .iter()
+            .map(|&p| [p[0] as f64, p[1] as f64, p[2] as f64])
+            .map(xyz::rgb)
+            .collect();
+        black_box(result);
+        xyz_rgb_scalar_ms = xyz_rgb_scalar_ms.min(start.elapsed().as_secs_f64() * 1e3);
+    }
+    let xyz_rgb_scalar_mps = (n as f64 / 1e6) / (xyz_rgb_scalar_ms / 1000.0);
+    append_record(
+        &ctx,
+        RecordParams {
+            route: "xyz->rgb",
+            best_ms: xyz_rgb_scalar_ms,
+            n,
+            iters: timed_iters,
+            warmup: warmup_iters,
+            decision: "baseline",
+            notes: &format!(
+                "Rust scalar batch baseline (pre-SIMD, f64 xyz::rgb), N={}",
+                format_number(n)
+            ),
+            baseline_ref: None,
+        },
+    );
+    println!(
+        "{:<18}  N={:>8}  best={:>9.3} ms  {:>10.1} MP/s  [scalar]",
+        "xyz->rgb (scalar)", n, xyz_rgb_scalar_ms, xyz_rgb_scalar_mps
+    );
+
+    // xyz->rgb (SIMD batch via matrix + forward sRGB gamma)
+    let mut xyz_rgb_simd_ms: f64 = f64::MAX;
+    for _ in 0..warmup_iters {
+        black_box(simd_xyz::xyz_to_rgb_batch(&xyz_inputs));
+    }
+    for _ in 0..timed_iters {
+        let start = Instant::now();
+        black_box(simd_xyz::xyz_to_rgb_batch(&xyz_inputs));
+        xyz_rgb_simd_ms = xyz_rgb_simd_ms.min(start.elapsed().as_secs_f64() * 1e3);
+    }
+    let xyz_rgb_simd_mps = (n as f64 / 1e6) / (xyz_rgb_simd_ms / 1000.0);
+    let xyz_rgb_kept = xyz_rgb_simd_mps > xyz_rgb_scalar_mps;
+    let xyz_rgb_decision = if xyz_rgb_kept { "kept" } else { "reverted" };
+    let xyz_rgb_speedup = xyz_rgb_simd_mps / xyz_rgb_scalar_mps;
+    append_record(
+        &ctx,
+        RecordParams {
+            route: "xyz->rgb",
+            best_ms: xyz_rgb_simd_ms,
+            n,
+            iters: timed_iters,
+            warmup: warmup_iters,
+            decision: xyz_rgb_decision,
+            notes: &format!(
+                "wide::f32x8 SIMD batch (matrix + forward sRGB gamma), N={}, speedup={:.2}x, tol=0.1",
+                format_number(n),
+                xyz_rgb_speedup
+            ),
+            baseline_ref: Some(&ctx.commit),
+        },
+    );
+    println!(
+        "{:<18}  N={:>8}  best={:>9.3} ms  {:>10.1} MP/s  [SIMD]  speedup={:.2}x  decision={}",
+        "xyz->rgb (SIMD)", n, xyz_rgb_simd_ms, xyz_rgb_simd_mps, xyz_rgb_speedup, xyz_rgb_decision
+    );
+
+    println!("\nAppended 21 records to {}", RESULTS_PATH);
 }
