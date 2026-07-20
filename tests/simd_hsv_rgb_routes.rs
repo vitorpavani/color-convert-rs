@@ -103,28 +103,28 @@ fn hsv_to_rgb_batch_matches_scalar() {
 fn hsv_to_rgb_batch_achromatic_and_edge_cases() {
     let test_hsv: Vec<[f64; 3]> = vec![
         // Achromatic (s=0, various V) — should produce r=g=b = v*2.55
-        [0.0, 0.0, 0.0],     // black
-        [0.0, 0.0, 50.0],    // mid grey
-        [0.0, 0.0, 100.0],   // white
-        [180.0, 0.0, 75.0],  // achromatic with non-zero hue
+        [0.0, 0.0, 0.0],    // black
+        [0.0, 0.0, 50.0],   // mid grey
+        [0.0, 0.0, 100.0],  // white
+        [180.0, 0.0, 75.0], // achromatic with non-zero hue
         // Primary hue sectors (s=100, v=100)
-        [0.0, 100.0, 100.0],    // red     → hi=0, f=0
-        [60.0, 100.0, 100.0],   // yellow  → hi=1, f=0
-        [120.0, 100.0, 100.0],  // green   → hi=2, f=0
-        [180.0, 100.0, 100.0],  // cyan    → hi=3, f=0
-        [240.0, 100.0, 100.0],  // blue    → hi=4, f=0
-        [300.0, 100.0, 100.0],  // magenta → hi=5, f=0
+        [0.0, 100.0, 100.0],   // red     → hi=0, f=0
+        [60.0, 100.0, 100.0],  // yellow  → hi=1, f=0
+        [120.0, 100.0, 100.0], // green   → hi=2, f=0
+        [180.0, 100.0, 100.0], // cyan    → hi=3, f=0
+        [240.0, 100.0, 100.0], // blue    → hi=4, f=0
+        [300.0, 100.0, 100.0], // magenta → hi=5, f=0
         // Mid-hue points (s=100, v=100, f=0.5)
-        [90.0, 100.0, 100.0],   // greenish-yellow, hi=1, f=0.5
-        [150.0, 100.0, 100.0],  // greenish-cyan,  hi=2, f=0.5
-        [210.0, 100.0, 100.0],  // blueish-cyan,   hi=3, f=0.5
-        [330.0, 100.0, 100.0],  // reddish-magenta,hi=5, f=0.5
+        [90.0, 100.0, 100.0],  // greenish-yellow, hi=1, f=0.5
+        [150.0, 100.0, 100.0], // greenish-cyan,  hi=2, f=0.5
+        [210.0, 100.0, 100.0], // blueish-cyan,   hi=3, f=0.5
+        [330.0, 100.0, 100.0], // reddish-magenta,hi=5, f=0.5
         // Hue near wrap boundary
         [359.0, 100.0, 50.0],  // near-red, hi=5, f≈0.98
         [360.0, 100.0, 100.0], // exactly 360 → same as h=0
         // Mixed s and v
-        [30.0, 50.0, 80.0],   // partial saturation and value
-        [200.0, 75.0, 25.0],  // low value
+        [30.0, 50.0, 80.0],  // partial saturation and value
+        [200.0, 75.0, 25.0], // low value
     ];
 
     let scalar_rgb: Vec<[f64; 3]> = test_hsv.iter().map(|&h| hsv::rgb(h)).collect();
@@ -136,11 +136,7 @@ fn hsv_to_rgb_batch_achromatic_and_edge_cases() {
 
     let simd_result = simd_hsv_rgb::hsv_to_rgb_batch(&hsv_f32);
 
-    assert_eq!(
-        simd_result.len(),
-        scalar_rgb.len(),
-        "batch size mismatch"
-    );
+    assert_eq!(simd_result.len(), scalar_rgb.len(), "batch size mismatch");
 
     for (i, (simd_val, scalar_val)) in simd_result.iter().zip(scalar_rgb.iter()).enumerate() {
         let _f32_check: [f32; 3] = *simd_val;
@@ -154,7 +150,7 @@ fn hsv_to_rgb_batch_achromatic_and_edge_cases() {
             if is_achromatic {
                 // For achromatic HSV, r=g=b=v*2.55 — all channels must match
                 // within a tighter tolerance
-                let expected = test_hsv[i][2] * 2.55;
+                let _expected = test_hsv[i][2] * 2.55;
                 assert!(
                     diff <= RGB_TOLERANCE,
                     "pixel {i} achromatic hsv={:?} chan {chan_name}: simd(f32)={} scalar(f64)={} diff={:.2e} > tol={:.2e}",

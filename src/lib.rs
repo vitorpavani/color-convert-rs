@@ -30,6 +30,7 @@ pub mod simd_cmyk;
 pub mod simd_hcg;
 pub mod simd_hsl;
 pub mod simd_hsv;
+pub mod simd_hsv_rgb;
 pub mod simd_hwb;
 pub mod simd_lab_xyz;
 pub mod simd_oklab;
