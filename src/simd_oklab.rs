@@ -25,7 +25,6 @@
 /// Processes 8 pixels at a time. Remainder pixels (final 0–7) fall back
 /// to the scalar [`crate::rgb::oklab`], converting its f64 output to f32.
 pub fn rgb_to_oklab_batch(rgb: &[[u8; 3]]) -> Vec<[f32; 3]> {
-    use crate::simd::srgb_inv_f32x8;
     use wide::f32x8;
 
     let n = rgb.len();
@@ -55,44 +54,38 @@ pub fn rgb_to_oklab_batch(rgb: &[[u8; 3]]) -> Vec<[f32; 3]> {
     const O22: f32 = 0.808_675_77;
 
     while i + 7 < n {
-        let r = f32x8::new([
-            rgb[i][0] as f32,
-            rgb[i + 1][0] as f32,
-            rgb[i + 2][0] as f32,
-            rgb[i + 3][0] as f32,
-            rgb[i + 4][0] as f32,
-            rgb[i + 5][0] as f32,
-            rgb[i + 6][0] as f32,
-            rgb[i + 7][0] as f32,
+        // sRGB inverse gamma via compile-time LUT — skips both u8→f32
+        // conversion AND /255.0 normalization (precomputed in LUT).
+        let r_lin = crate::simd::srgb_inv_lut_u8x8([
+            rgb[i][0],
+            rgb[i + 1][0],
+            rgb[i + 2][0],
+            rgb[i + 3][0],
+            rgb[i + 4][0],
+            rgb[i + 5][0],
+            rgb[i + 6][0],
+            rgb[i + 7][0],
         ]);
-        let g = f32x8::new([
-            rgb[i][1] as f32,
-            rgb[i + 1][1] as f32,
-            rgb[i + 2][1] as f32,
-            rgb[i + 3][1] as f32,
-            rgb[i + 4][1] as f32,
-            rgb[i + 5][1] as f32,
-            rgb[i + 6][1] as f32,
-            rgb[i + 7][1] as f32,
+        let g_lin = crate::simd::srgb_inv_lut_u8x8([
+            rgb[i][1],
+            rgb[i + 1][1],
+            rgb[i + 2][1],
+            rgb[i + 3][1],
+            rgb[i + 4][1],
+            rgb[i + 5][1],
+            rgb[i + 6][1],
+            rgb[i + 7][1],
         ]);
-        let b = f32x8::new([
-            rgb[i][2] as f32,
-            rgb[i + 1][2] as f32,
-            rgb[i + 2][2] as f32,
-            rgb[i + 3][2] as f32,
-            rgb[i + 4][2] as f32,
-            rgb[i + 5][2] as f32,
-            rgb[i + 6][2] as f32,
-            rgb[i + 7][2] as f32,
+        let b_lin = crate::simd::srgb_inv_lut_u8x8([
+            rgb[i][2],
+            rgb[i + 1][2],
+            rgb[i + 2][2],
+            rgb[i + 3][2],
+            rgb[i + 4][2],
+            rgb[i + 5][2],
+            rgb[i + 6][2],
+            rgb[i + 7][2],
         ]);
-
-        let r_norm = r / f32x8::splat(255.0);
-        let g_norm = g / f32x8::splat(255.0);
-        let b_norm = b / f32x8::splat(255.0);
-
-        let r_lin = srgb_inv_f32x8(r_norm);
-        let g_lin = srgb_inv_f32x8(g_norm);
-        let b_lin = srgb_inv_f32x8(b_norm);
 
         // LMS cone response — linear sRGB → LMS, then cube root
         let lp =

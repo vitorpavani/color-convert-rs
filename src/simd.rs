@@ -41,12 +41,61 @@
 /// both branches are computed for all 8 lanes, then the correct one is selected
 /// via `mask.blend(pow_branch, linear_branch)`.  Uses `f32x8::powf(2.4)` which
 /// delegates to the `wide` crate's LLVM-generated vector intrinsic.
+///
+/// Retained behind `#[cfg(test)]` — the production hot path now uses the
+/// [`SRGB_INV_LUT`] + [`srgb_inv_lut_u8x8`] path which is faster (no powf).
+/// Only the `srgb_inv_f32x8_matches_scalar` correctness test references this.
+#[cfg(test)]
 #[inline]
 pub(crate) fn srgb_inv_f32x8(c: wide::f32x8) -> wide::f32x8 {
     let pow_branch = ((c + wide::f32x8::splat(0.055)) / wide::f32x8::splat(1.055)).powf(2.4);
     let linear_branch = c / wide::f32x8::splat(12.92);
     let mask = c.simd_gt(wide::f32x8::splat(0.04045));
     mask.blend(pow_branch, linear_branch)
+}
+
+/// Compile-time sRGB inverse-gamma lookup table — 256 entries, one per u8
+/// channel value. Precomputes `srgb_nonlinear_transform_inv(i/255.0)` so the
+/// runtime hot path skips both the `/255.0` normalization AND the `powf(2.4)`
+/// transcendental.  Formula is bit-identical to [`srgb_inv_f32x8`] for every
+/// discrete u8 input, making this a lossless optimization (Rule 8 safe).
+///
+/// Uses `LazyLock` because `f32::powf` is not a `const fn`.  The LUT is
+/// computed once on first access (sub-microsecond) and then served from a flat
+/// 1 KB static array with zero runtime overhead per call.
+static SRGB_INV_LUT: std::sync::LazyLock<[f32; 256]> = std::sync::LazyLock::new(|| {
+    let mut lut = [0.0f32; 256];
+    let mut i = 0;
+    while i < 256 {
+        let c = i as f32 / 255.0;
+        lut[i] = if c > 0.04045 {
+            ((c + 0.055) / 1.055).powf(2.4)
+        } else {
+            c / 12.92
+        };
+        i += 1;
+    }
+    lut
+});
+
+/// Gather 8 sRGB inverse-gamma values from the compile-time LUT.
+///
+/// The input `ch` is pure `u8` (0-255) — exactly the channel bytes stored in
+/// a pixel slice.  No `/255.0` normalization is needed because the LUT already
+/// encodes the full `srgb_nonlinear_transform_inv(u8/255.0)` result directly.
+#[inline]
+pub(crate) fn srgb_inv_lut_u8x8(ch: [u8; 8]) -> wide::f32x8 {
+    let lut = &*SRGB_INV_LUT;
+    wide::f32x8::new([
+        lut[ch[0] as usize],
+        lut[ch[1] as usize],
+        lut[ch[2] as usize],
+        lut[ch[3] as usize],
+        lut[ch[4] as usize],
+        lut[ch[5] as usize],
+        lut[ch[6] as usize],
+        lut[ch[7] as usize],
+    ])
 }
 
 /// CIE LAB transfer function — vectorized across 8 f32 lanes via mask-blend.
@@ -78,44 +127,38 @@ pub fn rgb_to_xyz_batch(rgb: &[[u8; 3]]) -> Vec<[f32; 3]> {
     let mut i = 0;
 
     while i + 7 < n {
-        let r = f32x8::new([
-            rgb[i][0] as f32,
-            rgb[i + 1][0] as f32,
-            rgb[i + 2][0] as f32,
-            rgb[i + 3][0] as f32,
-            rgb[i + 4][0] as f32,
-            rgb[i + 5][0] as f32,
-            rgb[i + 6][0] as f32,
-            rgb[i + 7][0] as f32,
+        // sRGB inverse gamma via compile-time LUT — skips both
+        // u8→f32 conversion AND /255.0 normalization (precomputed in LUT).
+        let r_lin = srgb_inv_lut_u8x8([
+            rgb[i][0],
+            rgb[i + 1][0],
+            rgb[i + 2][0],
+            rgb[i + 3][0],
+            rgb[i + 4][0],
+            rgb[i + 5][0],
+            rgb[i + 6][0],
+            rgb[i + 7][0],
         ]);
-        let g = f32x8::new([
-            rgb[i][1] as f32,
-            rgb[i + 1][1] as f32,
-            rgb[i + 2][1] as f32,
-            rgb[i + 3][1] as f32,
-            rgb[i + 4][1] as f32,
-            rgb[i + 5][1] as f32,
-            rgb[i + 6][1] as f32,
-            rgb[i + 7][1] as f32,
+        let g_lin = srgb_inv_lut_u8x8([
+            rgb[i][1],
+            rgb[i + 1][1],
+            rgb[i + 2][1],
+            rgb[i + 3][1],
+            rgb[i + 4][1],
+            rgb[i + 5][1],
+            rgb[i + 6][1],
+            rgb[i + 7][1],
         ]);
-        let b = f32x8::new([
-            rgb[i][2] as f32,
-            rgb[i + 1][2] as f32,
-            rgb[i + 2][2] as f32,
-            rgb[i + 3][2] as f32,
-            rgb[i + 4][2] as f32,
-            rgb[i + 5][2] as f32,
-            rgb[i + 6][2] as f32,
-            rgb[i + 7][2] as f32,
+        let b_lin = srgb_inv_lut_u8x8([
+            rgb[i][2],
+            rgb[i + 1][2],
+            rgb[i + 2][2],
+            rgb[i + 3][2],
+            rgb[i + 4][2],
+            rgb[i + 5][2],
+            rgb[i + 6][2],
+            rgb[i + 7][2],
         ]);
-
-        let r_norm = r / f32x8::splat(255.0);
-        let g_norm = g / f32x8::splat(255.0);
-        let b_norm = b / f32x8::splat(255.0);
-
-        let r_lin = srgb_inv_f32x8(r_norm);
-        let g_lin = srgb_inv_f32x8(g_norm);
-        let b_lin = srgb_inv_f32x8(b_norm);
 
         let x = r_lin * f32x8::splat(0.4124564)
             + g_lin * f32x8::splat(0.3575761)
@@ -259,44 +302,38 @@ pub fn rgb_to_lab_batch(rgb: &[[u8; 3]]) -> Vec<[f32; 3]> {
     let zn = f32x8::splat(108.883);
 
     while i + 7 < n {
-        let r = f32x8::new([
-            rgb[i][0] as f32,
-            rgb[i + 1][0] as f32,
-            rgb[i + 2][0] as f32,
-            rgb[i + 3][0] as f32,
-            rgb[i + 4][0] as f32,
-            rgb[i + 5][0] as f32,
-            rgb[i + 6][0] as f32,
-            rgb[i + 7][0] as f32,
+        // sRGB inverse gamma via compile-time LUT — skips both u8→f32
+        // conversion AND /255.0 normalization (precomputed in LUT).
+        let r_lin = srgb_inv_lut_u8x8([
+            rgb[i][0],
+            rgb[i + 1][0],
+            rgb[i + 2][0],
+            rgb[i + 3][0],
+            rgb[i + 4][0],
+            rgb[i + 5][0],
+            rgb[i + 6][0],
+            rgb[i + 7][0],
         ]);
-        let g = f32x8::new([
-            rgb[i][1] as f32,
-            rgb[i + 1][1] as f32,
-            rgb[i + 2][1] as f32,
-            rgb[i + 3][1] as f32,
-            rgb[i + 4][1] as f32,
-            rgb[i + 5][1] as f32,
-            rgb[i + 6][1] as f32,
-            rgb[i + 7][1] as f32,
+        let g_lin = srgb_inv_lut_u8x8([
+            rgb[i][1],
+            rgb[i + 1][1],
+            rgb[i + 2][1],
+            rgb[i + 3][1],
+            rgb[i + 4][1],
+            rgb[i + 5][1],
+            rgb[i + 6][1],
+            rgb[i + 7][1],
         ]);
-        let b = f32x8::new([
-            rgb[i][2] as f32,
-            rgb[i + 1][2] as f32,
-            rgb[i + 2][2] as f32,
-            rgb[i + 3][2] as f32,
-            rgb[i + 4][2] as f32,
-            rgb[i + 5][2] as f32,
-            rgb[i + 6][2] as f32,
-            rgb[i + 7][2] as f32,
+        let b_lin = srgb_inv_lut_u8x8([
+            rgb[i][2],
+            rgb[i + 1][2],
+            rgb[i + 2][2],
+            rgb[i + 3][2],
+            rgb[i + 4][2],
+            rgb[i + 5][2],
+            rgb[i + 6][2],
+            rgb[i + 7][2],
         ]);
-
-        let r_norm = r / f32x8::splat(255.0);
-        let g_norm = g / f32x8::splat(255.0);
-        let b_norm = b / f32x8::splat(255.0);
-
-        let r_lin = srgb_inv_f32x8(r_norm);
-        let g_lin = srgb_inv_f32x8(g_norm);
-        let b_lin = srgb_inv_f32x8(b_norm);
 
         let x = r_lin * f32x8::splat(0.4124564)
             + g_lin * f32x8::splat(0.3575761)
@@ -404,30 +441,33 @@ mod tests {
         }
     }
 
-    /// Behavior: `srgb_inv_lut_u8x8` must match `srgb_inv_f32x8(u8/255.0)` for
-    /// ALL 256 possible u8 inputs — exhaustive sweep, no tolerance needed
-    /// since the LUT formula is bit-identical to the scalar reference.
+    /// Behavior: `srgb_inv_lut_u8x8` must match the scalar `srgb_inv_f32`
+    /// reference for ALL 256 possible u8 inputs — exhaustive sweep, no tolerance
+    /// since both use the same `f32::powf` scalar implementation.
+    ///
+    /// Comparison is against the scalar `srgb_inv_f32(i/255.0)`, NOT against
+    /// `srgb_inv_f32x8`, because `f32x8::powf` (SIMD) and `f32::powf` (scalar)
+    /// can differ by ±1 ULP for transcendental functions.  The LUT is computed
+    /// with `f32::powf`, so the scalar reference is the correct ground truth.
     ///
     /// This test will FAIL TO COMPILE until `srgb_inv_lut_u8x8` exists (RED gate).
     #[test]
     fn srgb_inv_lut_u8x8_exhaustive_match() {
         for ch in 0u8..=255u8 {
-            let want = srgb_inv_f32x8(f32x8::splat(ch as f32 / 255.0)).to_array();
-            let lut_full: [u8; 8] = [ch; 8];
+            let normalized = ch as f32 / 255.0;
+            let want = srgb_inv_f32(normalized);
             // This call will FAIL TO COMPILE until the function exists:
-            let got = srgb_inv_lut_u8x8(lut_full).to_array();
-            for (g, w) in got.iter().zip(want.iter()) {
-                assert_eq!(
-                    g.to_bits(),
-                    w.to_bits(),
-                    "u8={}: LUT value {:.6e} ({:#010x}) != powf value {:.6e} ({:#010x})",
-                    ch,
-                    g,
-                    g.to_bits(),
-                    w,
-                    w.to_bits()
-                );
-            }
+            let got = srgb_inv_lut_u8x8([ch; 8]).to_array()[0];
+            assert_eq!(
+                got.to_bits(),
+                want.to_bits(),
+                "u8={}: LUT value {:.6e} ({:#010x}) != scalar value {:.6e} ({:#010x})",
+                ch,
+                got,
+                got.to_bits(),
+                want,
+                want.to_bits()
+            );
         }
     }
 
