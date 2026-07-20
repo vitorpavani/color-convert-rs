@@ -39,6 +39,11 @@ pollster = "0.4"
 # conversion)
 cubecl = { version = "0.10", features = ["wgpu"] }
 
+# Multi-core parallelism for SIMD batch routes via work-stealing thread pool.
+# Each core runs 8-wide f32x8 SIMD on a chunk; rayon spreads chunks across
+# cores with order-stable par_chunks. (Rule 9: issue #110)
+rayon = "1"
+
 # Tiny, zero-copy typed-casting library for reinterpreting byte slices as
 # typed f32/u8 slices without unsafe transmutes. Required by CubeCL's
 # `create_from_slice` (which expects bytemuck::Pod input) and for

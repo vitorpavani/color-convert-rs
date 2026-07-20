@@ -10,7 +10,9 @@
 //! element types) and chunk-boundary N values (N < CHUNK, N == CHUNK, N just
 //! over CHUNK, and N with a partial-SIMD-tile remainder).
 
-use color_convert_rs::{simd, simd_apple, simd_hsl, simd_oklab, simd_oklab_rgb, simd_xyz};
+use color_convert_rs::{
+    simd, simd_apple, simd_hsl, simd_oklab, simd_oklab_rgb, simd_parallel, simd_xyz,
+};
 
 /// Deterministic RGB pixel generator (mulberry32, seed=42) — matches the harness.
 fn generate_rgb_pixels(n: usize) -> Vec<[u8; 3]> {
@@ -36,12 +38,12 @@ fn generate_rgb_pixels(n: usize) -> Vec<[u8; 3]> {
 /// N values straddling the parallel-chunk boundary (PARALLEL_CHUNK = 65_536)
 /// AND the per-core SIMD tile boundary (8). Each must round-trip identically.
 const CHUNK_BOUNDARY_NS: [usize; 6] = [
-    1,           // tiny: single scalar-remainder pixel
-    8,           // exactly one SIMD tile, no remainder
-    65_536,      // exactly one parallel chunk
-    65_537,      // one chunk + 1 pixel (forces chunk split + remainder)
-    100_000,     // multiple chunks, non-multiple of 8 and of CHUNK
-    200_003,     // larger non-multiple, exercises load balancing
+    1,       // tiny: single scalar-remainder pixel
+    8,       // exactly one SIMD tile, no remainder
+    65_536,  // exactly one parallel chunk
+    65_537,  // one chunk + 1 pixel (forces chunk split + remainder)
+    100_000, // multiple chunks, non-multiple of 8 and of CHUNK
+    200_003, // larger non-multiple, exercises load balancing
 ];
 
 #[test]
