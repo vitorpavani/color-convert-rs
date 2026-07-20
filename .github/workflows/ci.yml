@@ -1,0 +1,75 @@
+name: CI
+
+on:
+  push:
+    branches: [main, staging]
+  pull_request:
+    branches: [main, staging]
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: -D warnings
+
+jobs:
+  test:
+    name: Test + Clippy + Fmt
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        features: ["--no-default-features", "--features gpu"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - name: Install system deps (GPU build needs Vulkan headers)
+        if: matrix.features == '--features gpu'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libvulkan-dev mesa-vulkan-drivers vulkan-tools
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ matrix.features }}-${{ hashFiles('Cargo.lock') }}
+      - name: Check formatting
+        run: cargo fmt --check
+      - name: Clippy
+        run: cargo clippy ${{ matrix.features }} --all-targets -- -D warnings
+      - name: Build
+        run: cargo build ${{ matrix.features }} --all-targets
+      - name: Test
+        run: cargo test ${{ matrix.features }}
+
+  wasm-build:
+    name: wasm-pack build check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: jetli/wasm-pack-action@v0.4.0
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-wasm-${{ hashFiles('Cargo.lock') }}
+      - name: Check wasm compiles
+        run: cargo check --features wasm --target wasm32-unknown-unknown
+      - name: wasm-pack build
+        run: wasm-pack build --target nodejs --features wasm
+      - name: Copy wasm artifacts to js/
+        run: |
+          cp pkg/color_convert_rs.js js/
+          cp pkg/color_convert_rs_bg.wasm js/
+          cp pkg/color_convert_rs.d.ts js/
+      - name: Run JS parity test vs color-convert@3.1.3
+        run: |
+          cd js && npm install && npm test
