@@ -130,12 +130,7 @@ fn civil_from_days(days: i64) -> Option<(i64, u32, u32)> {
 // ── Timing ──────────────────────────────────────────────────────────────
 
 /// Best-of-N timing for a batch fn over `&[[u8;3]]` input.
-fn bench_u8_batch<F, T>(
-    pixels: &[[u8; 3]],
-    warmup: usize,
-    iters: usize,
-    f: F,
-) -> f64
+fn bench_u8_batch<F, T>(pixels: &[[u8; 3]], warmup: usize, iters: usize, f: F) -> f64
 where
     F: Fn(&[[u8; 3]]) -> T,
 {
@@ -155,12 +150,7 @@ where
 }
 
 /// Best-of-N timing for a batch fn over `&[[f32;3]]` input (inverse routes).
-fn bench_f32_batch<F, T>(
-    inputs: &[[f32; 3]],
-    warmup: usize,
-    iters: usize,
-    f: F,
-) -> f64
+fn bench_f32_batch<F, T>(inputs: &[[f32; 3]], warmup: usize, iters: usize, f: F) -> f64
 where
     F: Fn(&[[f32; 3]]) -> T,
 {
@@ -186,24 +176,25 @@ struct BenchCtx {
     gpu_present: bool,
 }
 
-fn append_record(
-    ctx: &BenchCtx,
-    route: &str,
+struct RecordMeta<'a> {
+    route: &'a str,
     best_ms: f64,
     n: usize,
     iters: usize,
     warmup: usize,
-    decision: &str,
-    notes: &str,
-    baseline_ref: Option<&str>,
-) {
-    let throughput_mps = (n as f64 / 1_000_000.0) / (best_ms / 1000.0);
-    let escaped_route = route.replace('\\', "\\\\").replace('"', "\\\"");
-    let ts = utc_now_iso();
-    let escaped_notes = notes.replace('\\', "\\\\").replace('"', "\\\"");
-    let escaped_decision = decision.replace('\\', "\\\\").replace('"', "\\\"");
+    decision: &'a str,
+    notes: &'a str,
+    baseline_ref: Option<&'a str>,
+}
 
-    let baseline_ref_json = match baseline_ref {
+fn append_record(ctx: &BenchCtx, meta: &RecordMeta<'_>) {
+    let throughput_mps = (meta.n as f64 / 1_000_000.0) / (meta.best_ms / 1000.0);
+    let escaped_route = meta.route.replace('\\', "\\\\").replace('"', "\\\"");
+    let ts = utc_now_iso();
+    let escaped_notes = meta.notes.replace('\\', "\\\\").replace('"', "\\\"");
+    let escaped_decision = meta.decision.replace('\\', "\\\\").replace('"', "\\\"");
+
+    let baseline_ref_json = match meta.baseline_ref {
         Some(r) => {
             let escaped = r.replace('\\', "\\\\").replace('"', "\\\"");
             format!(r#","baseline_ref":"{escaped}""#)
@@ -223,11 +214,11 @@ fn append_record(
         ts = ts,
         commit = ctx.commit,
         route = escaped_route,
-        n = n,
+        n = meta.n,
         mps = throughput_mps,
-        ms = best_ms,
-        iters = iters,
-        warmup = warmup,
+        ms = meta.best_ms,
+        iters = meta.iters,
+        warmup = meta.warmup,
         host = ctx.host,
         gp = ctx.gpu_present,
         decision = escaped_decision,
@@ -258,14 +249,16 @@ fn bench_forward_route(
     let serial_mps = (n as f64 / 1e6) / (serial_ms / 1000.0);
     append_record(
         ctx,
-        route_name,
-        serial_ms,
-        n,
-        iters,
-        warmup,
-        "baseline",
-        &format!("serial SIMD (1 core), N={}", format_number(n)),
-        None,
+        &RecordMeta {
+            route: route_name,
+            best_ms: serial_ms,
+            n,
+            iters,
+            warmup,
+            decision: "baseline",
+            notes: &format!("serial SIMD (1 core), N={}", format_number(n)),
+            baseline_ref: None,
+        },
     );
     println!(
         "  {:<16} serial:   {:>9.3} ms  {:>10.1} MP/s",
@@ -278,22 +271,29 @@ fn bench_forward_route(
     });
     let par_mps = (n as f64 / 1e6) / (par_ms / 1000.0);
     let speedup = par_mps / serial_mps;
-    let decision = if par_mps > serial_mps { "kept" } else { "reverted" };
+    let decision = if par_mps > serial_mps {
+        "kept"
+    } else {
+        "reverted"
+    };
+    let par_notes = format!(
+        "parallel SIMD (rayon {} cores), N={}, speedup={:.2}x",
+        rayon::current_num_threads(),
+        format_number(n),
+        speedup
+    );
     append_record(
         ctx,
-        route_name,
-        par_ms,
-        n,
-        iters,
-        warmup,
-        decision,
-        &format!(
-            "parallel SIMD (rayon {} cores), N={}, speedup={:.2}x",
-            rayon::current_num_threads(),
-            format_number(n),
-            speedup
-        ),
-        Some(&ctx.commit),
+        &RecordMeta {
+            route: route_name,
+            best_ms: par_ms,
+            n,
+            iters,
+            warmup,
+            decision,
+            notes: &par_notes,
+            baseline_ref: Some(&ctx.commit),
+        },
     );
     println!(
         "  {:<16} parallel: {:>9.3} ms  {:>10.1} MP/s  speedup={:.2}x  decision={}",
@@ -316,14 +316,16 @@ fn bench_f32_route(
     let serial_mps = (n as f64 / 1e6) / (serial_ms / 1000.0);
     append_record(
         ctx,
-        route_name,
-        serial_ms,
-        n,
-        iters,
-        warmup,
-        "baseline",
-        &format!("serial SIMD (1 core), N={}", format_number(n)),
-        None,
+        &RecordMeta {
+            route: route_name,
+            best_ms: serial_ms,
+            n,
+            iters,
+            warmup,
+            decision: "baseline",
+            notes: &format!("serial SIMD (1 core), N={}", format_number(n)),
+            baseline_ref: None,
+        },
     );
     println!(
         "  {:<16} serial:   {:>9.3} ms  {:>10.1} MP/s",
@@ -336,22 +338,29 @@ fn bench_f32_route(
     });
     let par_mps = (n as f64 / 1e6) / (par_ms / 1000.0);
     let speedup = par_mps / serial_mps;
-    let decision = if par_mps > serial_mps { "kept" } else { "reverted" };
+    let decision = if par_mps > serial_mps {
+        "kept"
+    } else {
+        "reverted"
+    };
+    let par_notes = format!(
+        "parallel SIMD (rayon {} cores), N={}, speedup={:.2}x",
+        rayon::current_num_threads(),
+        format_number(n),
+        speedup
+    );
     append_record(
         ctx,
-        route_name,
-        par_ms,
-        n,
-        iters,
-        warmup,
-        decision,
-        &format!(
-            "parallel SIMD (rayon {} cores), N={}, speedup={:.2}x",
-            rayon::current_num_threads(),
-            format_number(n),
-            speedup
-        ),
-        Some(&ctx.commit),
+        &RecordMeta {
+            route: route_name,
+            best_ms: par_ms,
+            n,
+            iters,
+            warmup,
+            decision,
+            notes: &par_notes,
+            baseline_ref: Some(&ctx.commit),
+        },
     );
     println!(
         "  {:<16} parallel: {:>9.3} ms  {:>10.1} MP/s  speedup={:.2}x  decision={}",
@@ -401,9 +410,7 @@ fn main() {
         "Generated {} deterministic pixels (seed=42)",
         format_number(pixels.len())
     );
-    println!(
-        "Host: {host}  Cores: {num_threads}  GPU: {gpu_present}  Commit: {commit}"
-    );
+    println!("Host: {host}  Cores: {num_threads}  GPU: {gpu_present}  Commit: {commit}");
     println!("Warmup: {warmup}   Timed iters: {iters}\n");
 
     // ═══════════════════════════════════════════════════════════════════════
@@ -411,17 +418,40 @@ fn main() {
     // ═══════════════════════════════════════════════════════════════════════
 
     println!("─── Forward routes (rgb→X) ───");
-    bench_forward_route(&ctx, &pixels, n, warmup, iters, "rgb->xyz", simd::rgb_to_xyz_batch);
     bench_forward_route(
-        &ctx, &pixels, n, warmup, iters, "rgb->lab",
+        &ctx,
+        &pixels,
+        n,
+        warmup,
+        iters,
+        "rgb->xyz",
+        simd::rgb_to_xyz_batch,
+    );
+    bench_forward_route(
+        &ctx,
+        &pixels,
+        n,
+        warmup,
+        iters,
+        "rgb->lab",
         simd::rgb_to_lab_batch,
     );
     bench_forward_route(
-        &ctx, &pixels, n, warmup, iters, "rgb->hsl",
+        &ctx,
+        &pixels,
+        n,
+        warmup,
+        iters,
+        "rgb->hsl",
         simd_hsl::rgb_to_hsl_batch,
     );
     bench_forward_route(
-        &ctx, &pixels, n, warmup, iters, "rgb->hsv",
+        &ctx,
+        &pixels,
+        n,
+        warmup,
+        iters,
+        "rgb->hsv",
         simd_hsv::rgb_to_hsv_batch,
     );
 
@@ -432,26 +462,51 @@ fn main() {
         let ser_ms = bench_u8_batch(&pixels, warmup, iters, simd_cmyk::rgb_to_cmyk_batch);
         let ser_mps = (n as f64 / 1e6) / (ser_ms / 1000.0);
         append_record(
-            &ctx, route, ser_ms, n, iters, warmup, "baseline",
-            &format!("serial SIMD (1 core), N={}", format_number(n)), None,
+            &ctx,
+            &RecordMeta {
+                route,
+                best_ms: ser_ms,
+                n,
+                iters,
+                warmup,
+                decision: "baseline",
+                notes: &format!("serial SIMD (1 core), N={}", format_number(n)),
+                baseline_ref: None,
+            },
         );
-        println!("  {:<16} serial:   {:>9.3} ms  {:>10.1} MP/s", route, ser_ms, ser_mps);
+        println!(
+            "  {:<16} serial:   {:>9.3} ms  {:>10.1} MP/s",
+            route, ser_ms, ser_mps
+        );
         // Parallel
         let par_ms = bench_u8_batch(&pixels, warmup, iters, |pix| {
             simd_parallel::par_batch(pix, simd_cmyk::rgb_to_cmyk_batch)
         });
         let par_mps = (n as f64 / 1e6) / (par_ms / 1000.0);
         let speedup = par_mps / ser_mps;
-        let decision = if par_mps > ser_mps { "kept" } else { "reverted" };
+        let decision = if par_mps > ser_mps {
+            "kept"
+        } else {
+            "reverted"
+        };
+        let par_notes = format!(
+            "parallel SIMD (rayon {} cores), N={}, speedup={:.2}x",
+            rayon::current_num_threads(),
+            format_number(n),
+            speedup
+        );
         append_record(
-            &ctx, route, par_ms, n, iters, warmup, decision,
-            &format!(
-                "parallel SIMD (rayon {} cores), N={}, speedup={:.2}x",
-                rayon::current_num_threads(),
-                format_number(n),
-                speedup
-            ),
-            Some(&ctx.commit),
+            &ctx,
+            &RecordMeta {
+                route,
+                best_ms: par_ms,
+                n,
+                iters,
+                warmup,
+                decision,
+                notes: &par_notes,
+                baseline_ref: Some(&ctx.commit),
+            },
         );
         println!(
             "  {:<16} parallel: {:>9.3} ms  {:>10.1} MP/s  speedup={:.2}x  decision={}",
@@ -459,19 +514,39 @@ fn main() {
         );
     }
     bench_forward_route(
-        &ctx, &pixels, n, warmup, iters, "rgb->hwb",
+        &ctx,
+        &pixels,
+        n,
+        warmup,
+        iters,
+        "rgb->hwb",
         simd_hwb::rgb_to_hwb_batch,
     );
     bench_forward_route(
-        &ctx, &pixels, n, warmup, iters, "rgb->oklab",
+        &ctx,
+        &pixels,
+        n,
+        warmup,
+        iters,
+        "rgb->oklab",
         simd_oklab::rgb_to_oklab_batch,
     );
     bench_forward_route(
-        &ctx, &pixels, n, warmup, iters, "rgb->hcg",
+        &ctx,
+        &pixels,
+        n,
+        warmup,
+        iters,
+        "rgb->hcg",
         simd_hcg::rgb_to_hcg_batch,
     );
     bench_forward_route(
-        &ctx, &pixels, n, warmup, iters, "rgb->apple",
+        &ctx,
+        &pixels,
+        n,
+        warmup,
+        iters,
+        "rgb->apple",
         simd_apple::rgb_to_apple_batch,
     );
 
@@ -480,7 +555,12 @@ fn main() {
     // Pre-convert rgb→xyz (NOT timed)
     let xyz_inputs: Vec<[f32; 3]> = simd::rgb_to_xyz_batch(&pixels);
     bench_f32_route(
-        &ctx, &xyz_inputs, n, warmup, iters, "xyz->lab",
+        &ctx,
+        &xyz_inputs,
+        n,
+        warmup,
+        iters,
+        "xyz->lab",
         simd::xyz_to_lab_batch,
     );
 
@@ -493,35 +573,60 @@ fn main() {
     // hsl→rgb
     let hsl_inputs: Vec<[f32; 3]> = simd_hsl::rgb_to_hsl_batch(&pixels);
     bench_f32_route(
-        &ctx, &hsl_inputs, n, warmup, iters, "hsl->rgb",
+        &ctx,
+        &hsl_inputs,
+        n,
+        warmup,
+        iters,
+        "hsl->rgb",
         simd_hsl::hsl_to_rgb_batch,
     );
 
     // hsv→rgb
     let hsv_inputs: Vec<[f32; 3]> = simd_hsv::rgb_to_hsv_batch(&pixels);
     bench_f32_route(
-        &ctx, &hsv_inputs, n, warmup, iters, "hsv->rgb",
+        &ctx,
+        &hsv_inputs,
+        n,
+        warmup,
+        iters,
+        "hsv->rgb",
         simd_hsv_rgb::hsv_to_rgb_batch,
     );
 
     // oklab→rgb
     let oklab_inputs: Vec<[f32; 3]> = simd_oklab::rgb_to_oklab_batch(&pixels);
     bench_f32_route(
-        &ctx, &oklab_inputs, n, warmup, iters, "oklab->rgb",
+        &ctx,
+        &oklab_inputs,
+        n,
+        warmup,
+        iters,
+        "oklab->rgb",
         simd_oklab_rgb::oklab_to_rgb_batch,
     );
 
     // hcg→rgb
     let hcg_inputs: Vec<[f32; 3]> = simd_hcg::rgb_to_hcg_batch(&pixels);
     bench_f32_route(
-        &ctx, &hcg_inputs, n, warmup, iters, "hcg->rgb",
+        &ctx,
+        &hcg_inputs,
+        n,
+        warmup,
+        iters,
+        "hcg->rgb",
         simd_hcg::hcg_to_rgb_batch,
     );
 
     // xyz→rgb
     // (already have xyz_inputs from above)
     bench_f32_route(
-        &ctx, &xyz_inputs, n, warmup, iters, "xyz->rgb",
+        &ctx,
+        &xyz_inputs,
+        n,
+        warmup,
+        iters,
+        "xyz->rgb",
         simd_xyz::xyz_to_rgb_batch,
     );
 
@@ -531,7 +636,12 @@ fn main() {
         simd::xyz_to_lab_batch(&xyz_tmp)
     };
     bench_f32_route(
-        &ctx, &lab_inputs, n, warmup, iters, "lab->xyz",
+        &ctx,
+        &lab_inputs,
+        n,
+        warmup,
+        iters,
+        "lab->xyz",
         simd_lab_xyz::lab_to_xyz_batch,
     );
 
