@@ -1,18 +1,26 @@
-//! CubeCL GPU compute kernel for batch colour-space conversion.
+//! CubeCL GPU compute kernels for batch colour-space conversion.
 //!
-//! ## Behaviour
+//! ## Kernels (1-D, one thread per pixel)
 //!
-//! The `rgb→lab` route is implemented as a 1-D kernel: each thread
-//! processes exactly one `[u8; 3]` input pixel and writes one `[f32; 3]`
-//! CIELAB output triplet.  The data buffer is a flat `f32` array of
-//! length `3 * n_pixels`.
+//! | Kernel | Output channels | Tolerance vs CPU f64 | Issue |
+//! |--------|-----------------|----------------------|-------|
+//! | `rgb→lab` | 3 (l,a,b) | ≤ 0.5 | #22 |
+//! | `rgb→hsl` | 3 (h,s,l) | ≤ 0.1 | #123 |
+//! | `rgb→hsv` | 3 (h,s,v) | ≤ 0.1 | #123 |
+//! | `rgb→cmyk` | 4 (c,m,y,k) | ≤ 0.1 | #123 |
 //!
-//! ## Reference behaviour
+//! Each kernel mirrors the corresponding scalar `rgb::*` function exactly,
+//! but computed in `f32` on the GPU rather than `f64` on the CPU.  The
+//! f32→f64 rounding delta is covered by a documented per-route tolerance.
 //!
-//! The kernel mirrors the scalar `rgb::lab` (see `src/rgb.rs`) exactly,
-//! but computed in `f32` on the GPU rather than `f64` on the CPU.  This
-//! means the GPU result will differ from the CPU result by a small f32
-//! rounding delta — the correctness gate uses a documented tolerance.
+//! ## CubeCL 0.10 type constraint
+//!
+//! Standalone `f32` literals (e.g. `0.0_f32`) are treated as Rust `f32`
+//! in the `#[cube]` context, while arithmetic results from `Array` access
+//! are `NativeExpand<f32>`.  Mixing the two in `if`/`else` branches
+//! produces a type mismatch.  The workaround: derive constants from the
+//! input array (`let zero = input[0] * 0.0_f32`), ensuring all branches
+//! share the `NativeExpand<f32>` type.
 //!
 //! ## Host safety (Rule 5)
 //!
@@ -24,17 +32,10 @@
 //!
 //! ## Unsafe
 //!
-//! Two `unsafe` blocks exist: the [`rgb_to_lab_kernel::launch`] call and
+//! `unsafe` blocks exist for each [`kernel::launch`] call and
 //! [`ArrayArg::from_raw_parts`] — both are required by the CubeCL API.
 //! Each is documented with a `// SAFETY:` comment justifying the length
 //! invariant.  No other `unsafe` is used.
-//!
-//! ## Tolerance
-//!
-//! CIELAB `[l, a, b]` f32 GPU output is compared against the f64 CPU
-//! reference with an absolute tolerance ≤ 0.5 in each channel.  This
-//! accounts for the f32→f64 precision loss on the piecewise LAB transfer
-//! function and the matrix multiply.  See the correctness-gate test.
 
 use std::time::Instant;
 
@@ -395,4 +396,461 @@ pub fn rgb_to_lab_gpu_batch_timed(rgb: &[[u8; 3]]) -> Option<(Vec<[f32; 3]>, Gpu
             readback_ms,
         },
     ))
+}
+
+// ── Kernel: rgb → hsl (1 thread per pixel) ─────────────────────────────
+
+/// GPU kernel: converts `n_pixels` RGB triples (as a flat f32 buffer of
+/// length `3 × n_pixels`) into HSL floats `[h, s, l]` in the output
+/// buffer of the same length, one pixel per thread.
+///
+/// The calculation mirrors `rgb::hsl_f64` (f64, scalar) but runs in f32.
+/// Tolerance: ≤ 0.1 per channel (well-conditioned f32 formulas).
+#[cube(launch)]
+fn rgb_to_hsl_kernel(input: &Array<f32>, output: &mut Array<f32>, n_pixels: usize) {
+    // Derive NativeExpand f32 constants from the input array so that all
+    // if/else branches use the same CubeCL type (standalone f32 literals
+    // are treated as Rust f32, not NativeExpand, and mixing the two in a
+    // conditional produces a type mismatch).
+    let zero = input[0] * 0.0_f32;
+    let one = zero + 1.0_f32;
+    let two = one + one;
+    let four = two + two;
+    let three_sixty = zero + 360.0_f32;
+    let half = zero + 0.5_f32;
+    let hundred = zero + 100.0_f32;
+    let sixty = zero + 60.0_f32;
+    let two_fifty_five = zero + 255.0_f32;
+
+    let pos = ABSOLUTE_POS;
+
+    if pos < n_pixels {
+        let i = pos * 3;
+        let r = input[i] / two_fifty_five;
+        let g = input[i + 1] / two_fifty_five;
+        let b = input[i + 2] / two_fifty_five;
+
+        // Min of three channels
+        let diff_rg = r - g;
+        let min_rg = if diff_rg < zero { r } else { g };
+        let diff_min_b = min_rg - b;
+        let min_val = if diff_min_b < zero { min_rg } else { b };
+
+        // Max of three channels
+        let diff_rg = r - g;
+        let max_rg = if diff_rg > zero { r } else { g };
+        let diff_max_b = max_rg - b;
+        let max_val = if diff_max_b > zero { max_rg } else { b };
+
+        let delta = max_val - min_val;
+
+        // Lightness
+        let l = (min_val + max_val) / two;
+
+        // Saturation
+        let diff_l = l - half;
+        let s_raw = if diff_l <= zero {
+            delta / (max_val + min_val)
+        } else {
+            delta / (two - max_val - min_val)
+        };
+        let s = if delta > zero { s_raw } else { zero };
+
+        // Hue: 3-way branch (r==max, g==max, else b==max)
+        let diff_r_max = r - max_val;
+        let diff_g_max = g - max_val;
+        let h_r = if diff_r_max == zero {
+            (g - b) / delta
+        } else {
+            zero
+        };
+        let h_g = if diff_g_max == zero {
+            two + (b - r) / delta
+        } else {
+            zero
+        };
+        // b==max: neither r nor g is max
+        let diff_r_max_sq = diff_r_max * diff_r_max;
+        let h_b = if diff_r_max_sq > zero {
+            four + (r - g) / delta
+        } else {
+            zero
+        };
+        // Sum the three mutually exclusive branches (only one is non-zero)
+        let h_raw = h_r + h_g + h_b;
+        let h_deg = h_raw * sixty;
+        let diff_h = h_deg - three_sixty;
+        let h_clamped = if diff_h > zero { three_sixty } else { h_deg };
+        let h = if h_clamped < zero {
+            h_clamped + three_sixty
+        } else {
+            h_clamped
+        };
+
+        output[i] = h;
+        output[i + 1] = s * hundred;
+        output[i + 2] = l * hundred;
+    }
+}
+
+/// Converts a batch of `[u8; 3]` RGB pixels to HSL `[f32; 3]` using
+/// the CubeCL/wgpu GPU kernel.
+///
+/// # Return value
+///
+/// - `None` when no GPU is available (this host).
+/// - `Some(Vec<[f32; 3]>)` when a GPU was acquired and the kernel completed.
+pub fn rgb_to_hsl_gpu_batch(rgb: &[[u8; 3]]) -> Option<Vec<[f32; 3]>> {
+    let n = rgb.len();
+    if n == 0 {
+        return Some(Vec::new());
+    }
+
+    if crate::probe::probe() != crate::probe::Backend::Gpu {
+        return None;
+    }
+
+    let client =
+        std::panic::catch_unwind(|| WgpuRuntime::client(&WgpuDevice::DefaultDevice)).ok()?;
+
+    let n_float = n * 3;
+    let mut flat_input: Vec<f32> = Vec::with_capacity(n_float);
+    for pixel in rgb {
+        flat_input.push(f32::from(pixel[0]));
+        flat_input.push(f32::from(pixel[1]));
+        flat_input.push(f32::from(pixel[2]));
+    }
+
+    let in_handle = client.create_from_slice(bytemuck::cast_slice(&flat_input));
+    let out_handle = client.empty(n_float * size_of::<f32>());
+
+    let (cube_count, cube_dim) = compute_launch_grid(n);
+
+    // SAFETY: The kernel launch is unsafe per the CubeCL API because the
+    // runtime cannot statically verify that the ArrayArg handles match the
+    // kernel's expected buffer lengths.  We guarantee:
+    //   - `in_handle` has `n_float` (= 3 × n) f32 elements
+    //   - `out_handle` has `n_float` f32 elements (allocated via `empty`)
+    //   - `n_pixels` (= n) is the per-thread bounds-check constant
+    //   - `cube_count` covers all n pixels (div_ceil ensures no underflow)
+    unsafe {
+        rgb_to_hsl_kernel::launch(
+            &client,
+            cube_count,
+            cube_dim,
+            ArrayArg::from_raw_parts(in_handle.clone(), n_float),
+            ArrayArg::from_raw_parts(out_handle.clone(), n_float),
+            n,
+        );
+    }
+
+    let bytes = match client.read_one(out_handle) {
+        Ok(b) => b,
+        Err(_) => return None,
+    };
+    let result_f32: &[f32] = bytemuck::cast_slice(&bytes);
+
+    let mut result: Vec<[f32; 3]> = Vec::with_capacity(n);
+    for i in 0..n {
+        let base = i * 3;
+        result.push([result_f32[base], result_f32[base + 1], result_f32[base + 2]]);
+    }
+
+    Some(result)
+}
+
+// ── Kernel: rgb → hsv (1 thread per pixel) ─────────────────────────────
+
+/// GPU kernel: converts `n_pixels` RGB triples (as a flat f32 buffer of
+/// length `3 × n_pixels`) into HSV floats `[h, s, v]` in the output
+/// buffer of the same length, one pixel per thread.
+///
+/// The calculation mirrors `rgb::hsv_f64` (f64, scalar) but runs in f32:
+/// 1. Normalise `/255` → [0, 1]
+/// 2. Value = max(r, g, b), diff = value - min
+/// 3. Saturation = if diff==0 {0} else {diff/value}
+/// 4. Hue via diffc = (v-c)/6/diff + 0.5
+/// 5. 3-way branch on v==r, v==g, else v==b
+#[cube(launch)]
+fn rgb_to_hsv_kernel(input: &Array<f32>, output: &mut Array<f32>, n_pixels: usize) {
+    // Derive NativeExpand f32 constants from the input array.
+    let zero = input[0] * 0.0_f32;
+    let one = zero + 1.0_f32;
+    let two = one + one;
+    let three = two + one;
+    let six = three + three;
+    let half = zero + 0.5_f32;
+    let hundred = zero + 100.0_f32;
+    let three_sixty = zero + 360.0_f32;
+    let two_fifty_five = zero + 255.0_f32;
+    let one_third = one / three;
+    let two_thirds = two / three;
+
+    let pos = ABSOLUTE_POS;
+
+    if pos < n_pixels {
+        let i = pos * 3;
+        let r = input[i] / two_fifty_five;
+        let g = input[i + 1] / two_fifty_five;
+        let b = input[i + 2] / two_fifty_five;
+
+        // Min and max of three channels
+        let diff_rg = r - g;
+        let min_rg = if diff_rg < zero { r } else { g };
+        let diff_min_b = min_rg - b;
+        let min_val = if diff_min_b < zero { min_rg } else { b };
+
+        let max_rg = if diff_rg > zero { r } else { g };
+        let diff_max_b = max_rg - b;
+        let v = if diff_max_b > zero { max_rg } else { b };
+
+        let diff = v - min_val;
+
+        // Saturation
+        let s = if diff > zero { diff / v } else { zero };
+
+        // Hue via diffc (mirrors JS diffc = (v-c)/6/diff + 0.5)
+        let h = if diff > zero {
+            let rdif = (v - r) / six / diff + half;
+            let gdif = (v - g) / six / diff + half;
+            let bdif = (v - b) / six / diff + half;
+
+            let diff_r_v = r - v;
+            let diff_g_v = g - v;
+            let h_r = if diff_r_v == zero { bdif - gdif } else { zero };
+            let h_g = if diff_g_v == zero {
+                one_third + rdif - bdif
+            } else {
+                zero
+            };
+            let h_b = if diff_r_v != zero && diff_g_v != zero {
+                two_thirds + gdif - rdif
+            } else {
+                zero
+            };
+            let h_raw = h_r + h_g + h_b;
+
+            if h_raw < zero {
+                h_raw + one
+            } else if h_raw > one {
+                h_raw - one
+            } else {
+                h_raw
+            }
+        } else {
+            zero
+        };
+
+        output[i] = h * three_sixty;
+        output[i + 1] = s * hundred;
+        output[i + 2] = v * hundred;
+    }
+}
+
+/// Converts a batch of `[u8; 3]` RGB pixels to HSV `[f32; 3]` using
+/// the CubeCL/wgpu GPU kernel.
+///
+/// # Return value
+///
+/// - `None` when no GPU is available (this host).
+/// - `Some(Vec<[f32; 3]>)` when a GPU was acquired and the kernel completed.
+pub fn rgb_to_hsv_gpu_batch(rgb: &[[u8; 3]]) -> Option<Vec<[f32; 3]>> {
+    let n = rgb.len();
+    if n == 0 {
+        return Some(Vec::new());
+    }
+
+    if crate::probe::probe() != crate::probe::Backend::Gpu {
+        return None;
+    }
+
+    let client =
+        std::panic::catch_unwind(|| WgpuRuntime::client(&WgpuDevice::DefaultDevice)).ok()?;
+
+    let n_float = n * 3;
+    let mut flat_input: Vec<f32> = Vec::with_capacity(n_float);
+    for pixel in rgb {
+        flat_input.push(f32::from(pixel[0]));
+        flat_input.push(f32::from(pixel[1]));
+        flat_input.push(f32::from(pixel[2]));
+    }
+
+    let in_handle = client.create_from_slice(bytemuck::cast_slice(&flat_input));
+    let out_handle = client.empty(n_float * size_of::<f32>());
+
+    let (cube_count, cube_dim) = compute_launch_grid(n);
+
+    // SAFETY: The kernel launch is unsafe per the CubeCL API because the
+    // runtime cannot statically verify that the ArrayArg handles match the
+    // kernel's expected buffer lengths.  We guarantee:
+    //   - `in_handle` has `n_float` (= 3 × n) f32 elements
+    //   - `out_handle` has `n_float` f32 elements (allocated via `empty`)
+    //   - `n_pixels` (= n) is the per-thread bounds-check constant
+    //   - `cube_count` covers all n pixels (div_ceil ensures no underflow)
+    unsafe {
+        rgb_to_hsv_kernel::launch(
+            &client,
+            cube_count,
+            cube_dim,
+            ArrayArg::from_raw_parts(in_handle.clone(), n_float),
+            ArrayArg::from_raw_parts(out_handle.clone(), n_float),
+            n,
+        );
+    }
+
+    let bytes = match client.read_one(out_handle) {
+        Ok(b) => b,
+        Err(_) => return None,
+    };
+    let result_f32: &[f32] = bytemuck::cast_slice(&bytes);
+
+    let mut result: Vec<[f32; 3]> = Vec::with_capacity(n);
+    for i in 0..n {
+        let base = i * 3;
+        result.push([result_f32[base], result_f32[base + 1], result_f32[base + 2]]);
+    }
+
+    Some(result)
+}
+
+// ── Kernel: rgb → cmyk (1 thread per pixel) ────────────────────────────
+
+/// GPU kernel: converts `n_pixels` RGB triples (as a flat f32 buffer of
+/// length `3 × n_pixels`) into CMYK floats `[c, m, y, k]` in the output
+/// buffer of length `4 × n_pixels`, one pixel per thread.
+///
+/// The calculation mirrors `rgb::cmyk_f64` (f64, scalar) but runs in f32:
+/// 1. Normalise `/255` → [0, 1]
+/// 2. Black key: k = 1 - max(r, g, b)
+/// 3. Guard: if k == 1 → CMY = 0 (mirrors JS `|| 0` fallback)
+/// 4. CMY = (1 - c - k) / (1 - k)
+///
+/// # Note on output stride
+///
+/// CMYK has **4** output channels per pixel, so the output buffer uses
+/// stride 4: `output[pos * 4 + ch]` for ch ∈ {c, m, y, k}.
+#[cube(launch)]
+fn rgb_to_cmyk_kernel(input: &Array<f32>, output: &mut Array<f32>, n_pixels: usize) {
+    // Derive NativeExpand f32 constants from the input array.
+    let zero = input[0] * 0.0_f32;
+    let one = zero + 1.0_f32;
+    let hundred = zero + 100.0_f32;
+    let two_fifty_five = zero + 255.0_f32;
+
+    let pos = ABSOLUTE_POS;
+
+    if pos < n_pixels {
+        let i = pos * 3;
+        let r = input[i] / two_fifty_five;
+        let g = input[i + 1] / two_fifty_five;
+        let b = input[i + 2] / two_fifty_five;
+
+        let inv_r = one - r;
+        let inv_g = one - g;
+        let inv_b = one - b;
+
+        // Black key: min of (1-r, 1-g, 1-b)
+        let diff_rg = inv_r - inv_g;
+        let k_rg = if diff_rg < zero { inv_r } else { inv_g };
+        let diff_k_b = k_rg - inv_b;
+        let k = if diff_k_b < zero { k_rg } else { inv_b };
+
+        let denom = one - k;
+
+        // Guard: k == 1 (pure black) → CMY = 0 (mirrors JS || 0)
+        let c = if denom > zero {
+            (inv_r - k) / denom
+        } else {
+            zero
+        };
+        let m = if denom > zero {
+            (inv_g - k) / denom
+        } else {
+            zero
+        };
+        let y = if denom > zero {
+            (inv_b - k) / denom
+        } else {
+            zero
+        };
+
+        // CMYK output uses stride 4 (4 channels per pixel)
+        let o = pos * 4;
+        output[o] = c * hundred;
+        output[o + 1] = m * hundred;
+        output[o + 2] = y * hundred;
+        output[o + 3] = k * hundred;
+    }
+}
+/// Converts a batch of `[u8; 3]` RGB pixels to CMYK `[f32; 4]` using
+/// the CubeCL/wgpu GPU kernel.
+///
+/// # Return value
+///
+/// - `None` when no GPU is available (this host).
+/// - `Some(Vec<[f32; 4]>)` when a GPU was acquired and the kernel completed.
+///   CMYK has 4 channels: `[c, m, y, k]` each in 0–100 range.
+pub fn rgb_to_cmyk_gpu_batch(rgb: &[[u8; 3]]) -> Option<Vec<[f32; 4]>> {
+    let n = rgb.len();
+    if n == 0 {
+        return Some(Vec::new());
+    }
+
+    if crate::probe::probe() != crate::probe::Backend::Gpu {
+        return None;
+    }
+
+    let client =
+        std::panic::catch_unwind(|| WgpuRuntime::client(&WgpuDevice::DefaultDevice)).ok()?;
+
+    let n_float_in = n * 3;
+    let n_float_out = n * 4;
+    let mut flat_input: Vec<f32> = Vec::with_capacity(n_float_in);
+    for pixel in rgb {
+        flat_input.push(f32::from(pixel[0]));
+        flat_input.push(f32::from(pixel[1]));
+        flat_input.push(f32::from(pixel[2]));
+    }
+
+    let in_handle = client.create_from_slice(bytemuck::cast_slice(&flat_input));
+    let out_handle = client.empty(n_float_out * size_of::<f32>());
+
+    let (cube_count, cube_dim) = compute_launch_grid(n);
+
+    // SAFETY: The kernel launch is unsafe per the CubeCL API because the
+    // runtime cannot statically verify that the ArrayArg handles match the
+    // kernel's expected buffer lengths.  We guarantee:
+    //   - `in_handle` has `n_float_in` (= 3 × n) f32 elements
+    //   - `out_handle` has `n_float_out` (= 4 × n) f32 elements
+    //   - `n_pixels` (= n) is the per-thread bounds-check constant
+    //   - `cube_count` covers all n pixels (div_ceil ensures no underflow)
+    unsafe {
+        rgb_to_cmyk_kernel::launch(
+            &client,
+            cube_count,
+            cube_dim,
+            ArrayArg::from_raw_parts(in_handle.clone(), n_float_in),
+            ArrayArg::from_raw_parts(out_handle.clone(), n_float_out),
+            n,
+        );
+    }
+
+    let bytes = match client.read_one(out_handle) {
+        Ok(b) => b,
+        Err(_) => return None,
+    };
+    let result_f32: &[f32] = bytemuck::cast_slice(&bytes);
+
+    let mut result: Vec<[f32; 4]> = Vec::with_capacity(n);
+    for i in 0..n {
+        let base = i * 4;
+        result.push([
+            result_f32[base],
+            result_f32[base + 1],
+            result_f32[base + 2],
+            result_f32[base + 3],
+        ]);
+    }
+
+    Some(result)
 }

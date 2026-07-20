@@ -1,4 +1,4 @@
-//! Tests for the CubeCL GPU batch conversion kernel (issue #22).
+//! Tests for the CubeCL GPU batch conversion kernels (issues #22, #123).
 //!
 //! Because this host has no GPU adapter, GPU client creation is guarded
 //! with `std::panic::catch_unwind` (AGENTS.md Rule 5 — never panic on a
@@ -7,8 +7,8 @@
 //! documented early return.
 //!
 //! When a GPU IS available (not on this host), the function returns
-//! `Some(Vec<[f32; 3]>)` — each triplet is the CIELAB `[l, a, b]` for
-//! the corresponding input pixel.  Tolerance is documented inline.
+//! `Some(Vec<[f32; N]>)` — each tuple is the converted value for the
+//! corresponding input pixel.  Tolerance is documented inline per route.
 
 use color_convert_rs::gpu;
 
@@ -116,6 +116,210 @@ fn gpu_kernel_matches_cpu_lab_within_tolerance() {
                     lab_gpu[2],
                     cpu_lab[2],
                     (lab_gpu[2] - cpu_lab[2]).abs()
+                );
+            }
+        }
+    }
+}
+
+// ── Issue #123: GPU parity kernels for rgb→hsl, rgb→hsv, rgb→cmyk ───────
+
+/// RED (issue #123): `rgb_to_hsl_gpu_batch` must exist and not panic on a
+/// GPU-less host. When a GPU is available, the output must match the CPU
+/// scalar `rgb::hsl` within an f32 vs f64 tolerance of 0.1 per channel.
+///
+/// The HSL computation involves divisions and multiplications that are
+/// well-conditioned for f32 — the per-channel tolerance of 0.1 covers the
+/// precision loss from f32 rounding on the hue/saturation/lightness formulas.
+/// Test vectors: pure red, green, blue, white, black, and a mid-tone gray.
+#[test]
+fn gpu_kernel_rgb_to_hsl_matches_cpu_within_tolerance() {
+    let test_vectors: Vec<[u8; 3]> = vec![
+        [255, 0, 0],     // pure red   → approx HSL [0, 100, 50]
+        [0, 255, 0],     // pure green → approx HSL [120, 100, 50]
+        [0, 0, 255],     // pure blue  → approx HSL [240, 100, 50]
+        [255, 255, 255], // white       → approx HSL [0, 0, 100]
+        [0, 0, 0],       // black       → approx HSL [0, 0, 0]
+        [128, 128, 128], // mid gray    → approx HSL [0, 0, 50]
+    ];
+
+    let result = gpu::rgb_to_hsl_gpu_batch(&test_vectors);
+
+    match result {
+        None => {
+            // No GPU available — green-by-skip.
+        }
+        Some(gpu_hsl) => {
+            assert_eq!(
+                gpu_hsl.len(),
+                test_vectors.len(),
+                "output length must match input length"
+            );
+
+            for (i, hsl_gpu) in gpu_hsl.iter().enumerate() {
+                let cpu_ref = color_convert_rs::rgb::hsl(test_vectors[i]);
+                let cpu_hsl: [f32; 3] = [cpu_ref[0] as f32, cpu_ref[1] as f32, cpu_ref[2] as f32];
+
+                let tol: f32 = 0.1;
+                assert!(
+                    (hsl_gpu[0] - cpu_hsl[0]).abs() <= tol,
+                    "pixel {i} H channel: gpu={}, cpu={}, diff={} > tol={tol}",
+                    hsl_gpu[0],
+                    cpu_hsl[0],
+                    (hsl_gpu[0] - cpu_hsl[0]).abs()
+                );
+                assert!(
+                    (hsl_gpu[1] - cpu_hsl[1]).abs() <= tol,
+                    "pixel {i} S channel: gpu={}, cpu={}, diff={} > tol={tol}",
+                    hsl_gpu[1],
+                    cpu_hsl[1],
+                    (hsl_gpu[1] - cpu_hsl[1]).abs()
+                );
+                assert!(
+                    (hsl_gpu[2] - cpu_hsl[2]).abs() <= tol,
+                    "pixel {i} L channel: gpu={}, cpu={}, diff={} > tol={tol}",
+                    hsl_gpu[2],
+                    cpu_hsl[2],
+                    (hsl_gpu[2] - cpu_hsl[2]).abs()
+                );
+            }
+        }
+    }
+}
+
+/// RED (issue #123): `rgb_to_hsv_gpu_batch` must exist and not panic on a
+/// GPU-less host. When a GPU is available, the output must match the CPU
+/// scalar `rgb::hsv` within an f32 vs f64 tolerance of 0.1 per channel.
+///
+/// The HSV computation uses min/max/delta from normalized RGB channels and
+/// a diffc-based hue derivation. All operations are well-conditioned for
+/// f32, and the per-channel tolerance of 0.1 covers the precision loss.
+/// Test vectors: pure red, green, blue, white, black, and a mid-tone gray.
+#[test]
+fn gpu_kernel_rgb_to_hsv_matches_cpu_within_tolerance() {
+    let test_vectors: Vec<[u8; 3]> = vec![
+        [255, 0, 0],     // pure red   → approx HSV [0, 100, 100]
+        [0, 255, 0],     // pure green → approx HSV [120, 100, 100]
+        [0, 0, 255],     // pure blue  → approx HSV [240, 100, 100]
+        [255, 255, 255], // white       → approx HSV [0, 0, 100]
+        [0, 0, 0],       // black       → approx HSV [0, 0, 0]
+        [128, 128, 128], // mid gray    → approx HSV [0, 0, 50]
+    ];
+
+    let result = gpu::rgb_to_hsv_gpu_batch(&test_vectors);
+
+    match result {
+        None => {
+            // No GPU available — green-by-skip.
+        }
+        Some(gpu_hsv) => {
+            assert_eq!(
+                gpu_hsv.len(),
+                test_vectors.len(),
+                "output length must match input length"
+            );
+
+            for (i, hsv_gpu) in gpu_hsv.iter().enumerate() {
+                let cpu_ref = color_convert_rs::rgb::hsv(test_vectors[i]);
+                let cpu_hsv: [f32; 3] = [cpu_ref[0] as f32, cpu_ref[1] as f32, cpu_ref[2] as f32];
+
+                let tol: f32 = 0.1;
+                assert!(
+                    (hsv_gpu[0] - cpu_hsv[0]).abs() <= tol,
+                    "pixel {i} H channel: gpu={}, cpu={}, diff={} > tol={tol}",
+                    hsv_gpu[0],
+                    cpu_hsv[0],
+                    (hsv_gpu[0] - cpu_hsv[0]).abs()
+                );
+                assert!(
+                    (hsv_gpu[1] - cpu_hsv[1]).abs() <= tol,
+                    "pixel {i} S channel: gpu={}, cpu={}, diff={} > tol={tol}",
+                    hsv_gpu[1],
+                    cpu_hsv[1],
+                    (hsv_gpu[1] - cpu_hsv[1]).abs()
+                );
+                assert!(
+                    (hsv_gpu[2] - cpu_hsv[2]).abs() <= tol,
+                    "pixel {i} V channel: gpu={}, cpu={}, diff={} > tol={tol}",
+                    hsv_gpu[2],
+                    cpu_hsv[2],
+                    (hsv_gpu[2] - cpu_hsv[2]).abs()
+                );
+            }
+        }
+    }
+}
+
+/// RED (issue #123): `rgb_to_cmyk_gpu_batch` must exist and not panic on a
+/// GPU-less host. When a GPU is available, the output must match the CPU
+/// scalar `rgb::cmyk` within an f32 vs f64 tolerance of 0.1 per channel.
+///
+/// The CMYK computation involves a black-key guard division (k == 1 → 0)
+/// that mirrors the JS `|| 0` fallback. The per-channel tolerance of 0.1
+/// covers the f32 precision loss on the `(1-r-k)/(1-k)` division chain.
+/// CMYK has 4 output channels: `[c, m, y, k]` each in 0–100 range.
+/// Test vectors: pure red, green, blue, white, black, and a mid-tone gray.
+#[test]
+fn gpu_kernel_rgb_to_cmyk_matches_cpu_within_tolerance() {
+    let test_vectors: Vec<[u8; 3]> = vec![
+        [255, 0, 0],     // pure red   → approx CMYK [0, 100, 100, 0]
+        [0, 255, 0],     // pure green → approx CMYK [100, 0, 100, 0]
+        [0, 0, 255],     // pure blue  → approx CMYK [100, 100, 0, 0]
+        [255, 255, 255], // white       → approx CMYK [0, 0, 0, 0]
+        [0, 0, 0],       // black       → approx CMYK [0, 0, 0, 100]
+        [128, 128, 128], // mid gray    → approx CMYK [0, 0, 0, 50]
+    ];
+
+    let result = gpu::rgb_to_cmyk_gpu_batch(&test_vectors);
+
+    match result {
+        None => {
+            // No GPU available — green-by-skip.
+        }
+        Some(gpu_cmyk) => {
+            assert_eq!(
+                gpu_cmyk.len(),
+                test_vectors.len(),
+                "output length must match input length"
+            );
+
+            for (i, cmyk_gpu) in gpu_cmyk.iter().enumerate() {
+                let cpu_ref = color_convert_rs::rgb::cmyk(test_vectors[i]);
+                let cpu_cmyk: [f32; 4] = [
+                    cpu_ref[0] as f32,
+                    cpu_ref[1] as f32,
+                    cpu_ref[2] as f32,
+                    cpu_ref[3] as f32,
+                ];
+
+                let tol: f32 = 0.1;
+                assert!(
+                    (cmyk_gpu[0] - cpu_cmyk[0]).abs() <= tol,
+                    "pixel {i} C channel: gpu={}, cpu={}, diff={} > tol={tol}",
+                    cmyk_gpu[0],
+                    cpu_cmyk[0],
+                    (cmyk_gpu[0] - cpu_cmyk[0]).abs()
+                );
+                assert!(
+                    (cmyk_gpu[1] - cpu_cmyk[1]).abs() <= tol,
+                    "pixel {i} M channel: gpu={}, cpu={}, diff={} > tol={tol}",
+                    cmyk_gpu[1],
+                    cpu_cmyk[1],
+                    (cmyk_gpu[1] - cpu_cmyk[1]).abs()
+                );
+                assert!(
+                    (cmyk_gpu[2] - cpu_cmyk[2]).abs() <= tol,
+                    "pixel {i} Y channel: gpu={}, cpu={}, diff={} > tol={tol}",
+                    cmyk_gpu[2],
+                    cpu_cmyk[2],
+                    (cmyk_gpu[2] - cpu_cmyk[2]).abs()
+                );
+                assert!(
+                    (cmyk_gpu[3] - cpu_cmyk[3]).abs() <= tol,
+                    "pixel {i} K channel: gpu={}, cpu={}, diff={} > tol={tol}",
+                    cmyk_gpu[3],
+                    cpu_cmyk[3],
+                    (cmyk_gpu[3] - cpu_cmyk[3]).abs()
                 );
             }
         }
