@@ -15,6 +15,7 @@ use std::hint::black_box;
 use std::io::Write;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
+use color_convert_rs::hcg;
 use color_convert_rs::hsl;
 use color_convert_rs::lab;
 use color_convert_rs::oklab;
@@ -1141,5 +1142,85 @@ fn main() {
         oklab_rgb_decision
     );
 
-    println!("\nAppended 26 records to {}", RESULTS_PATH);
+    // ── HCG→RGB routes (inverse route: hcg input) ──────────────────────
+    // Pre-convert RGB→hcg once (NOT timed) so we measure only hcg→rgb.
+    let hcg_inputs: Vec<[f32; 3]> = simd_hcg::rgb_to_hcg_batch(&pixels);
+
+    // hcg->rgb (scalar batch baseline)
+    let mut hcg_rgb_scalar_ms: f64 = f64::MAX;
+    for _ in 0..warmup_iters {
+        let result: Vec<[f64; 3]> = hcg_inputs
+            .iter()
+            .map(|&p| hcg::rgb([p[0] as f64, p[1] as f64, p[2] as f64]))
+            .collect();
+        black_box(result);
+    }
+    for _ in 0..timed_iters {
+        let start = Instant::now();
+        let result: Vec<[f64; 3]> = hcg_inputs
+            .iter()
+            .map(|&p| hcg::rgb([p[0] as f64, p[1] as f64, p[2] as f64]))
+            .collect();
+        black_box(result);
+        hcg_rgb_scalar_ms = hcg_rgb_scalar_ms.min(start.elapsed().as_secs_f64() * 1e3);
+    }
+    let hcg_rgb_scalar_mps = (n as f64 / 1e6) / (hcg_rgb_scalar_ms / 1000.0);
+    append_record(
+        &ctx,
+        RecordParams {
+            route: "hcg->rgb",
+            best_ms: hcg_rgb_scalar_ms,
+            n,
+            iters: timed_iters,
+            warmup: warmup_iters,
+            decision: "baseline",
+            notes: &format!(
+                "Rust scalar batch baseline (pre-SIMD, f64 hcg::rgb), N={}",
+                format_number(n)
+            ),
+            baseline_ref: None,
+        },
+    );
+    println!(
+        "{:<18}  N={:>8}  best={:>9.3} ms  {:>10.1} MP/s  [scalar]",
+        "hcg->rgb (scalar)", n, hcg_rgb_scalar_ms, hcg_rgb_scalar_mps
+    );
+
+    // hcg->rgb (SIMD batch via 6-way mask-blend + chroma-guard grayscale)
+    let mut hcg_rgb_simd_ms: f64 = f64::MAX;
+    for _ in 0..warmup_iters {
+        black_box(simd_hcg::hcg_to_rgb_batch(&hcg_inputs));
+    }
+    for _ in 0..timed_iters {
+        let start = Instant::now();
+        black_box(simd_hcg::hcg_to_rgb_batch(&hcg_inputs));
+        hcg_rgb_simd_ms = hcg_rgb_simd_ms.min(start.elapsed().as_secs_f64() * 1e3);
+    }
+    let hcg_rgb_simd_mps = (n as f64 / 1e6) / (hcg_rgb_simd_ms / 1000.0);
+    let hcg_rgb_kept = hcg_rgb_simd_mps > hcg_rgb_scalar_mps;
+    let hcg_rgb_decision = if hcg_rgb_kept { "kept" } else { "reverted" };
+    let hcg_rgb_speedup = hcg_rgb_simd_mps / hcg_rgb_scalar_mps;
+    append_record(
+        &ctx,
+        RecordParams {
+            route: "hcg->rgb",
+            best_ms: hcg_rgb_simd_ms,
+            n,
+            iters: timed_iters,
+            warmup: warmup_iters,
+            decision: hcg_rgb_decision,
+            notes: &format!(
+                "wide::f32x8 SIMD batch (6-way mask-blend + chroma-guard grayscale), N={}, speedup={:.2}x, tol=1e-3",
+                format_number(n),
+                hcg_rgb_speedup
+            ),
+            baseline_ref: Some(&ctx.commit),
+        },
+    );
+    println!(
+        "{:<18}  N={:>8}  best={:>9.3} ms  {:>10.1} MP/s  [SIMD]  speedup={:.2}x  decision={}",
+        "hcg->rgb (SIMD)", n, hcg_rgb_simd_ms, hcg_rgb_simd_mps, hcg_rgb_speedup, hcg_rgb_decision
+    );
+
+    println!("\nAppended 29 records to {}", RESULTS_PATH);
 }
