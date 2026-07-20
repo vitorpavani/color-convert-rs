@@ -1,7 +1,7 @@
 {
   "name": "color-convert-rs",
   "version": "0.2.0",
-  "description": "Drop-in replacement for color-convert backed by Rust+wasm SIMD",
+  "description": "Drop-in replacement for color-convert with auto-tiering: pure JS single-color + napi-rs SIMD batch",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -14,17 +14,29 @@
     "rgb",
     "hsl",
     "color-space",
-    "wasm",
-    "simd"
+    "napi",
+    "native",
+    "simd",
+    "image-processing"
   ],
   "main": "index.js",
   "types": "index.d.ts",
   "files": [
     "index.js",
     "index.d.ts",
+    "js-routes.js",
     "color_convert_rs.node",
     "README.md"
   ],
+  "os": [
+    "linux"
+  ],
+  "cpu": [
+    "x64"
+  ],
+  "engines": {
+    "node": ">=16"
+  },
   "scripts": {
     "test": "node test-parity.mjs"
   },
