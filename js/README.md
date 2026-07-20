@@ -1,23 +1,20 @@
 # color-convert-rs
 
-A [color-convert](https://www.npmjs.com/package/color-convert) compatible color conversion library, accelerated with Rust + WebAssembly SIMD for **batch processing**.
+A [color-convert](https://www.npmjs.com/package/color-convert) compatible color conversion library with **auto-tiering**: pure JS for single-color (at parity with the original), napi-rs SIMD for batch pixel processing (10-15× faster).
 
 ## Why use this?
 
-**For batch operations** (converting thousands of colors), this library is **2–8× faster** than `color-convert` thanks to Rust f32x8 SIMD inside WebAssembly:
+**Single-color conversions match color-convert speed.** The 9 hottest routes run as hand-optimized pure JS — V8's JIT compiles them to the same native code as color-convert.
 
-| Route | color-convert (JS) | color-convert-rs (wasm batch) | Speedup |
+**Batch processing is 10-15× faster.** Pass a `Uint8Array` of pixel data and the package auto-detects it, routing to Rust f32x8 SIMD via napi-rs — no API change needed.
+
+| Route | color-convert (JS) | color-convert-rs (auto-tier) | Speedup |
 |-------|-------------------:|------------------------------:|--------:|
-| rgb→xyz | 11 ms | 1 ms | **7.6×** |
-| rgb→lab | 16 ms | 2 ms | **6.8×** |
-| rgb→cmyk | 6 ms | 2 ms | **3.8×** |
-| rgb→hsv | 7 ms | 2 ms | **3.5×** |
-| rgb→hsl | 7 ms | 3 ms | **2.3×** |
-| rgb→oklab | 15 ms | 6 ms | **2.4×** |
-
-*100,000 colors, best of 5 runs, Node.js 24.*
-
-**For single-color conversions**, this library matches `color-convert` output exactly but is **not faster** — V8's JIT already compiles the JS conversion to native code, and the wasm call boundary adds overhead that outweighs the compute for a single color.
+| rgb→lab (100k px) | 7.6M ops/s | **103.4M ops/s** | **13.5×** |
+| rgb→oklab (100k px) | 10.0M | **74.0M** | **7.4×** |
+| rgb→xyz (100k px) | 15.1M | **97.4M** | **6.5×** |
+| rgb→lab (single) | 8.8M | **9.0M** | **1.03×** |
+| hsl→rgb (single) | 32.8M | **33.1M** | **1.01×** |
 
 ## Install
 
@@ -30,43 +27,30 @@ npm install color-convert-rs
 ```js
 const convert = require('color-convert-rs');
 
-// Single-color — drop-in compatible with color-convert:
+// Single color — pure JS, same API as color-convert:
 convert.rgb.hsl(255, 128, 0);       // → [30, 100, 50]
 convert.rgb.hex(255, 128, 0);       // → 'FF8000'
 convert.rgb.keyword(255, 0, 0);     // → 'red'
 convert.hex.rgb('FF8000');          // → [255, 128, 0]
+convert.hsl.rgb(30, 100, 50);       // → [255, 128, 0]
+
+// Pixel array — auto-detected, napi SIMD batch:
+const pixels = new Uint8Array([255, 0, 0, 0, 255, 0, 0, 0, 255]);
+const lab = convert.rgb.lab(pixels);  // → Float32Array [53.24, 80.09, 67.20, ...]
 ```
 
-## Batch API (the fast path)
+## Auto-tiering
 
-For processing large arrays of colors — image processing, data pipelines, palettes — use `.batch()`:
+The same function automatically picks the fastest path based on input type:
 
-```js
-// Input: flat Uint8Array of [r,g,b, r,g,b, ...]
-const pixels = new Uint8Array([
-  255, 0, 0,    // red
-  0, 255, 0,    // green
-  0, 0, 255,    // blue
-]);
+| Input | Routes to | Speed | Return type |
+|-------|-----------|-------|-------------|
+| `convert.rgb.hsl(255, 128, 0)` | Pure JS | ~30M ops/s | `number[]` |
+| `convert.rgb.hsl([255, 128, 0])` | Pure JS | ~30M ops/s | `number[]` |
+| `convert.rgb.lab(uint8ArrayOfPixels)` | napi SIMD | 100M+ ops/s | `Float32Array` |
+| `convert.rgb.lab(largeArrayOver300)` | napi SIMD | 100M+ ops/s | `Float32Array` |
 
-// Output: flat Float32Array of the target model's channels
-const lab = convert.rgb.lab.batch(pixels);
-// → Float32Array [ 53.24, 80.09, 67.20,  // red   in LAB
-//                   87.82, -86.18, 83.18, // green in LAB
-//                   32.30, 79.20, -107.86 ] // blue  in LAB
-
-// Available batch routes:
-convert.rgb.hsl.batch(pixels)    // → Float32Array (3 channels per pixel)
-convert.rgb.hsv.batch(pixels)
-convert.rgb.lab.batch(pixels)
-convert.rgb.xyz.batch(pixels)
-convert.rgb.cmyk.batch(pixels)   // → Float32Array (4 channels per pixel)
-convert.rgb.oklab.batch(pixels)
-convert.hsl.rgb.batch(hslFloat32Array)  // inverse: f32 input → f32 output
-convert.hsv.rgb.batch(hsvFloat32Array)
-```
-
-**Why batch is faster**: a single `batch()` call crosses the JS→wasm boundary once and processes all colors with f32x8 SIMD inside. A JS loop calls the conversion function N times, paying function-call overhead each time.
+No need to call `.batch()` explicitly — the package detects pixel data and routes accordingly. The `.batch()` and `.into()` APIs remain available for explicit control.
 
 ## Full API (single-color)
 
@@ -91,21 +75,29 @@ convert.hsl.rgb(30, 100, 50);       // → [255, 128, 0]
 
 ## API reference
 
-- `convert.<from>.<to>(...channels)` — rounded to integers (matches color-convert default)
+- `convert.<from>.<to>(...channels)` — auto-tiered (JS or napi based on input)
 - `convert.<from>.<to>.raw(...channels)` — unrounded floats
-- `convert.<from>.<to>.batch(uint8Array)` — SIMD batch, 2–8× faster (8 routes available)
-- `convert.<model>.channels` — number of channels (e.g. `3` for rgb, `4` for cmyk)
-- `convert.<model>.labels` — channel labels (e.g. `['r', 'g', 'b']`)
-- Array input: `convert.rgb.hsl([255, 128, 0])` also works
+- `convert.<from>.<to>.batch(uint8Array)` — force napi SIMD batch
+- `convert.<from>.<to>.into(float64Array, r, g, b)` — force zero-alloc napi (6 routes)
+- `convert.<model>.channels` — number of channels
+- `convert.<model>.labels` — channel labels
 
 ## Supported models (17)
 
 `rgb`, `hsl`, `hsv`, `hwb`, `cmyk`, `xyz`, `lab`, `lch`, `oklab`, `oklch`, `hex`, `keyword`, `ansi16`, `ansi256`, `hcg`, `apple`, `gray`
 
+## How it works
+
+1. **Single-color calls** route to hand-ported pure JS (`js/js-routes.js`). V8's JIT compiles the arithmetic to native code at ~3ns/call — no native boundary can beat this for trivial math.
+
+2. **Batch calls** (typed array input) route to the Rust native addon via napi-rs. The Rust core uses f32x8 SIMD + rayon multi-core to process 100M+ pixels/sec.
+
+3. **Auto-detection** checks `instanceof Uint8Array` (one check, ~0 overhead) and routes accordingly.
+
 ## Known limitations
 
-- **Single-color speed**: for one-off conversions, `color-convert` (pure JS) is faster — V8's JIT compiles it to native code with no wasm boundary overhead. Use this library when converting **many colors at once** via `.batch()`.
-- **`gray.lch` hue**: for achromatic grayscale inputs (chroma=0), the hue is arbitrary. This library returns 180° while `color-convert` returns 0°. Both produce the same visible color. Affects 1 of 272 routes.
+- **Platform-specific binary**: ships a Linux `.node` file. macOS/Windows need cross-compiled builds (planned via CI matrix).
+- **`gray.lch` hue**: for achromatic grayscale inputs (chroma=0), hue is arbitrary. Returns 180° vs color-convert's 0°. Both produce the same visible color. Affects 1 of 272 routes.
 
 ## License
 

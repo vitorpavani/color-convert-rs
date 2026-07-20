@@ -7,6 +7,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-07-20
+
+### Changed
+- **BREAKING**: Removed `wasm` feature, `src/wasm.rs`, `wasm-bindgen`/`js-sys` deps.
+  The npm package now uses a native napi-rs addon instead of WebAssembly.
+- **BREAKING**: `napi` feature replaces `wasm` feature for Node.js bindings.
+
+### Added
+- **napi-rs native addon** (`src/napi.rs`): replaces wasm-pack. Enables rayon
+  multi-core and GPU (CubeCL/wgpu) access from Node.js that wasm couldn't provide.
+- **Pure JS fast-path** (`js/js-routes.js`): 9 hottest single-color routes
+  (rgb→hsl/hsv/cmyk/xyz/lab/oklab/hwb, hsl→rgb, hsv→rgb) ported to hand-optimized
+  JS. Runs at V8 JIT speed — at parity with color-convert (0.8-1.05×).
+- **Auto-tiering**: `convert.rgb.lab(input)` automatically detects input type and
+  routes to JS (single-color) or napi SIMD (typed array/pixel data). No API change
+  needed — users get the fastest path automatically.
+- **Float64Array `.into()` API**: 6 routes accept a pre-allocated `Float64Array`
+  output buffer for zero-allocation tight loops. 1.6× faster than Vec return.
+- **Stride-aware batch API** (`src/batch.rs`): `batch::rgb_to_lab(&[u8], stride)`
+  handles any pixel layout (RGB stride=3, RGBA stride=4). No re-packing needed.
+- **`image` crate integration** (feature-gated): `batch::image::to_lab(&DynamicImage)`
+  — one-liner for any `image::DynamicImage`.
+- **`flake.nix`**: NixOS dev shell with gcc, wasm-pack, nodejs pre-configured.
+- **CI workflow for crates.io publishing** (triggers on `v*` tags).
+
+### Performance
+- Single-color: **at parity** with color-convert (was 7-25× slower with wasm)
+- Batch (100k+ pixels): **10-15× faster** than JS loop (rgb→lab: 103M ops/s)
+- `.into()` tight loops: 3.9M ops/s (1.6× faster than Vec return)
+- Full HD frame (1920×1080): all routes under 30ms — real-time video speed
+
+### Fixed
+- Oracle review fixes from v0.1.0: exclude list, CI parity test, CHANGELOG gap,
+  doctest `no_run` removed.
+
 ## [0.1.0] - 2026-07-20
 
 ### Added

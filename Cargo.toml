@@ -1,6 +1,6 @@
 [package]
 name = "color-convert-rs"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 description = "Behavior-faithful Rust port of npm color-convert with CPU-SIMD (f32x8) and optional GPU (CubeCL) acceleration"
 license = "MIT"

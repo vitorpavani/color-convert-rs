@@ -12,10 +12,11 @@ Fast Rust color-space conversion for **batch image and video processing** — f3
 multi-core rayon, optional GPU (CubeCL), and a wasm/npm package. Converts full HD frames
 in under 30ms. Built fully agentically via a Red/Green/Blue TDD loop.
 
-> **Status:** v0.1.0 published. Rust crate on crates.io path ready, npm package live.
-> 17 color models, stride-aware batch API (`src/batch.rs`), `image` crate integration,
-> wasm batch exports (2–8× faster than JS loops), flake.nix dev shell.
-> rgb→lab: **111.3 MP/s** single-core (10.3×), **164.0 MP/s** multi-core (15.2×).
+> **Status:** v0.2.0. Rust crate on crates.io, npm package with auto-tier (JS
+> single-color + napi batch SIMD). 17 color models, stride-aware batch API,
+> `image` crate integration, GPU via CubeCL.
+> rgb→lab: **111.3 MP/s** Rust single-core, **103-117M ops/s** napi batch,
+> **9.0M ops/s** JS single-color (at parity with color-convert).
 
 ## Vault Structure
 
@@ -47,6 +48,7 @@ ccrs-vault/
 | Why feature flags (gpu/wasm/image) | [ADR-003](adrs/003-feature-gating.md) |
 | npm/wasm strategy + perf findings | [ADR-004](adrs/004-npm-wasm-performance.md) |
 | Why we pivoted to image processing | [ADR-005](adrs/005-image-processing-pivot.md) |
+| napi-rs replacing wasm + auto-tier | [ADR-006](adrs/006-napi-auto-tier.md) |
 
 ### 📊 Understand the performance story
 
@@ -56,6 +58,7 @@ ccrs-vault/
 | The 10-wave optimization journey (10.8 → 111.3 MP/s) | [[01-optimization-journey]] |
 | Publish readiness + npm package | [[02-publish-readiness]] |
 | Batch API + image crate integration | [[03-image-batch-api]] |
+| napi migration + JS fast-path + auto-tier | [[04-napi-auto-tier]] |
 
 ### ✍️ Follow the articles
 
@@ -73,6 +76,7 @@ ccrs-vault/
 - [ADR-003](adrs/003-feature-gating.md) — feature flags: gpu, wasm, image behind opt-in
 - [ADR-004](adrs/004-npm-wasm-performance.md) — npm package: single-color slower, batch faster
 - [ADR-005](adrs/005-image-processing-pivot.md) — strategic pivot from JS port to image processing
+- [ADR-006](adrs/006-napi-auto-tier.md) — napi replacing wasm + hybrid JS fast-path + auto-tier
 
 ### engineering/
 
@@ -80,6 +84,7 @@ ccrs-vault/
 - [01-optimization-journey](engineering/01-optimization-journey.md) — 10-wave optimization drive (33 kept / 7 dropped)
 - [02-publish-readiness](engineering/02-publish-readiness.md) — #131–135, wasm-pack, npm publish, CI
 - [03-image-batch-api](engineering/03-image-batch-api.md) — stride API, image crate, 72–224 M px/s
+- [04-napi-auto-tier](engineering/04-napi-auto-tier.md) — napi migration, JS fast-path, auto-tier, benchmarks
 
 ### articles/
 

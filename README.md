@@ -80,7 +80,7 @@ let lab_raw = convert(Model::Rgb, Model::Lab, orange)?;     // unrounded floats
 | *(default)* | CPU SIMD batch + single-color conversion | `wide`, `rayon`, `thiserror` |
 | `image` | `batch::image::to_lab()` etc. for `image::DynamicImage` | `image` |
 | `gpu` | GPU kernels via CubeCL/wgpu + runtime probe | `cubecl`, `wgpu`, `pollster`, `bytemuck` |
-| `wasm` | wasm-bindgen exports for npm package | `wasm-bindgen`, `js-sys` |
+| `napi` | Native Node.js addon via napi-rs (replaces wasm) | `napi`, `napi-derive` |
 
 ```toml
 # Minimal — CPU SIMD only (no GPU deps):
@@ -158,8 +158,11 @@ See [`benchmarks/README.md`](./benchmarks/README.md) for the per-route benchmark
 
 ## npm package
 
-A WebAssembly build is available as [`color-convert-rs`](https://www.npmjs.com/package/color-convert-rs)
-on npm — a drop-in replacement for `color-convert` with batch SIMD for JS/Node.js image processing.
+A native Node.js addon (napi-rs) is available as
+[`color-convert-rs`](https://www.npmjs.com/package/color-convert-rs) on npm —
+a drop-in replacement for `color-convert` with **auto-tiering**: pure JS for
+single-color calls (at parity with color-convert), napi SIMD batch for pixel
+arrays (10-15× faster).
 
 ```bash
 npm install color-convert-rs
@@ -167,7 +170,12 @@ npm install color-convert-rs
 
 ```js
 const convert = require('color-convert-rs');
-convert.rgb.lab.batch(new Uint8Array([255, 0, 0, 0, 255, 0])); // Float32Array
+
+// Single color → pure JS (at parity with color-convert)
+convert.rgb.hsl(255, 128, 0);     // → [30, 100, 50]
+
+// Pixel array → napi SIMD (auto-detected, 10-15× faster)
+convert.rgb.lab(imageData.data);  // → Float32Array
 ```
 
 ## License
