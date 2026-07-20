@@ -124,15 +124,12 @@ pub fn oklab_to_rgb_batch(oklab: &[[f32; 3]]) -> Vec<[f32; 3]> {
         let s_cube = s * s * s;
 
         // Inverse LMS matrix: LMS³ → linear sRGB
-        let r_lin = l_cube * f32x8::splat(IM00)
-            + m_cube * f32x8::splat(IM01)
-            + s_cube * f32x8::splat(IM02);
-        let g_lin = l_cube * f32x8::splat(IM10)
-            + m_cube * f32x8::splat(IM11)
-            + s_cube * f32x8::splat(IM12);
-        let b_lin = l_cube * f32x8::splat(IM20)
-            + m_cube * f32x8::splat(IM21)
-            + s_cube * f32x8::splat(IM22);
+        let r_lin =
+            l_cube * f32x8::splat(IM00) + m_cube * f32x8::splat(IM01) + s_cube * f32x8::splat(IM02);
+        let g_lin =
+            l_cube * f32x8::splat(IM10) + m_cube * f32x8::splat(IM11) + s_cube * f32x8::splat(IM12);
+        let b_lin =
+            l_cube * f32x8::splat(IM20) + m_cube * f32x8::splat(IM21) + s_cube * f32x8::splat(IM22);
 
         // Apply forward sRGB non-linear transform and scale to 0–255
         let r = srgb_fwd_f32x8(r_lin) * f32x8::splat(255.0);
@@ -152,11 +149,7 @@ pub fn oklab_to_rgb_batch(oklab: &[[f32; 3]]) -> Vec<[f32; 3]> {
 
     // Scalar remainder — delegate to f64 scalar, convert to f32.
     while i < n {
-        let f64_input = [
-            oklab[i][0] as f64,
-            oklab[i][1] as f64,
-            oklab[i][2] as f64,
-        ];
+        let f64_input = [oklab[i][0] as f64, oklab[i][1] as f64, oklab[i][2] as f64];
         let f64_result = crate::oklab::rgb(f64_input);
         result.push([
             f64_result[0] as f32,
