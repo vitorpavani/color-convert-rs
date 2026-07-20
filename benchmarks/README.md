@@ -4,9 +4,9 @@ type: benchmark-rollup
 aliases: ["benchmark rollup", "ccrs benchmarks", "results rollup", "3-tier harness"]
 tags: [color-convert-rs, benchmark, simd, gpu, throughput, self-improvement]
 last_updated: 2026-07-14
-kept: 15
-dropped: 2
-waves: 8
+kept: 28
+dropped: 5
+waves: 9
 relates-to: ["[[docs/ARCHITECTURE_REVIEW|Architecture Review]]", "[[benchmarks/results-ledger|Results Ledger]]", "[[concepts/keep-or-revert-rule]]", "[[concepts/gpu-transfer-bound-kernel]]", "[[concepts/cpu-simd-hot-path]]"]
 ---
 
@@ -326,7 +326,7 @@ reduce total data in flight.
 > and iterator overhead and processing 8 pixels per tile. Tolerance 1e-6 (all outputs are exact
 > integer multiples of 257 ≤ 65535, exactly representable in f32). `grep '"issue":86' results.jsonl`.
 
-### Cumulative self-improvement summary (waves 1–8)
+### Cumulative self-improvement summary (waves 1–9)
 
 | Wave | Issue | Route | Δ | Decision |
 |------|-------|-------|---|----------|
@@ -347,20 +347,19 @@ reduce total data in flight.
 | 7 | #100 | oklab→rgb (inverse) | 2.48× | ✅ kept |
 | 8 | #104 | hsv→rgb (inverse) | 2.13× | ✅ kept |
 | 8 | #105 | hcg→rgb (inverse) | 3.94× | ✅ kept |
+| **9** | **#110** | **Multi-core rayon parallelism (cross-cutting)** | **1.09×–4.49× (13/16 routes)** | **13 ✅ / 3 ❌** |
 
-**15 kept, 2 dropped** across 8 waves — every kept change beat **both** the JS baseline AND the
-previous Rust iteration; every dropped change is recorded as a negative result. Waves 1–5 covered
-the forward (rgb→X) surface; waves 6–8 covered the inverse (X→rgb) surface.
+**28 kept, 5 dropped** across 9 waves. Waves 1–5: forward SIMD. Waves 6–8: inverse SIMD. Wave 9:
+multi-core parallelism (rayon `par_chunks`) — 13 routes kept (transcendental-heavy routes win
+3–4×; lightweight routes 1.1–1.4×), 3 reverted (cmyk/apple/lab→xyz — memory-bandwidth-bound,
+parallel overhead cancels the compute gain).
 
-> **CPU-SIMD surface now genuinely exhausted** (unqualified). Every numeric color route with a
-> non-trivial per-pixel body — **both forward AND inverse** — now has a vectorized f32x8 path.
-> What genuinely remains *not* worth SIMD: lookups/quantizers (hex, keyword, ansi16/256, gray),
-> the tiny lch/oklch wrappers, and the GPU path which is transfer-bound (see the #24 analysis —
-> PCIe, not compute). The two remaining high-leverage directions are orthogonal to per-route SIMD:
-> **multi-core parallelism** (`rayon::par_chunks_mut` would multiply every SIMD speedup ~5-15×
-> across the host's cores — the SIMD lanes use one core, the other 27 sit idle), and **GPU memory
-> staging** (pinned/zero-copy buffers to attack the real PCIe bottleneck). See
-> [[docs/ARCHITECTURE_REVIEW|the architecture review]] §4 for the full residual list.
+> **CPU optimization surface now genuinely exhausted** (SIMD + multi-core). Every numeric color
+> route has a vectorized f32x8 path (waves 1–8) AND most have a multi-core parallel path (wave 9).
+> The 3 routes where parallelism didn't help (cmyk, apple, lab→xyz) are memory-bandwidth-bound —
+> adding cores starves the shared memory bus, not the CPU. The remaining high-leverage direction
+> is **GPU memory staging** (pinned/zero-copy buffers to attack the PCIe bottleneck from #24).
+> See [[docs/ARCHITECTURE_REVIEW|the architecture review]] §4.
 
 ## See also
 
